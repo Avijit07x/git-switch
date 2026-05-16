@@ -6,7 +6,9 @@ dist-ssr
 
 # Tauri
 src-tauri/target
-src-tauri/Cargo.lock
+# NOTE: Cargo.lock IS committed for this app. Tauri ships a binary, so we
+# pin dependency versions for reproducible CI / release builds. Removing
+# this exclusion was the fix for the `cargo check --locked` failure in CI.
 
 # Editor
 .vscode/*
@@ -18,4 +20,6 @@ src-tauri/Cargo.lock
 *.sln
 *.sw?
 .env
-TODO.md
+
+# CI scratch
+RELEASE_NOTES.md
