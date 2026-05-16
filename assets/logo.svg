@@ -1,0 +1,37 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <defs>
+    <linearGradient id="gs-bg" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0b1220"/>
+    </linearGradient>
+    <linearGradient id="gs-accent" x1="320" y1="488" x2="704" y2="536" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#f97316"/>
+    </linearGradient>
+    <filter id="gs-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="14" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" rx="224" fill="url(#gs-bg)"/>
+  <rect x="1" y="1" width="1022" height="1022" rx="223" stroke="#ffffff" stroke-opacity="0.08" stroke-width="2"/>
+
+  <g stroke-linecap="round" fill="none">
+    <line x1="320" y1="200" x2="320" y2="488" stroke="#ffffff" stroke-width="52"/>
+    <line x1="704" y1="536" x2="704" y2="824" stroke="#ffffff" stroke-width="52"/>
+    <path d="M 320 488 C 320 600 408 624 512 624 C 616 624 704 600 704 536"
+          stroke="url(#gs-accent)" stroke-width="52" filter="url(#gs-glow)"/>
+  </g>
+
+  <g>
+    <circle cx="320" cy="200" r="76" fill="#ffffff"/>
+    <circle cx="320" cy="200" r="34" fill="#0b1220"/>
+
+    <circle cx="704" cy="824" r="76" fill="url(#gs-accent)"/>
+    <circle cx="704" cy="824" r="34" fill="#0b1220"/>
+  </g>
+</svg>

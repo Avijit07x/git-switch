@@ -1,0 +1,18 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" fill="none">
+  <defs>
+    <linearGradient id="gsm-accent" x1="20" y1="30.5" x2="44" y2="33.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#f97316"/>
+    </linearGradient>
+  </defs>
+
+  <g stroke-linecap="round" fill="none">
+    <line x1="20" y1="12.5" x2="20" y2="30.5" stroke="currentColor" stroke-width="3.25"/>
+    <line x1="44" y1="33.5" x2="44" y2="51.5" stroke="currentColor" stroke-width="3.25"/>
+    <path d="M 20 30.5 C 20 37.5 25.5 39 32 39 C 38.5 39 44 37.5 44 33.5"
+          stroke="url(#gsm-accent)" stroke-width="3.25"/>
+  </g>
+
+  <circle cx="20" cy="12.5" r="4.75" fill="currentColor"/>
+  <circle cx="44" cy="51.5" r="4.75" fill="url(#gsm-accent)"/>
+</svg>

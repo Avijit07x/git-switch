@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Git Switch</title>
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("git-switch.theme");
+          var theme =
+            stored === "light" || stored === "dark"
+              ? stored
+              : window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light";
+          document.documentElement.classList.add(theme);
+        } catch (_) {
+          /* localStorage unavailable */
+        }
+      })();
+    </script>
+    <style>
+      /* Paint the window background to match the runtime theme so the gap
+         between webview-ready and React-mount looks like a single surface. */
+      :root { color-scheme: light; background: #ffffff; }
+      html.dark { color-scheme: dark; background: #131313; }
+      html, body { margin: 0; height: 100%; }
+    </style>
+  </head>
+  <body class="bg-background text-foreground">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

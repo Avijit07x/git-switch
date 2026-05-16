@@ -1,0 +1,36 @@
+[package]
+name = "git-switch"
+version = "0.2.0"
+description = "Local Git branch manager for macOS"
+authors = ["Avijit Dey"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "git_switch_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["macos-private-api"] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["process", "io-util", "sync", "macros", "rt-multi-thread", "time"] }
+portable-pty = "0.9"
+notify = { version = "7", default-features = false, features = ["macos_fsevent"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = "fat"
+opt-level = 3
+strip = true
+incremental = false
+overflow-checks = false
