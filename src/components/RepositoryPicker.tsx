@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { FolderPlus, Loader2, AlertTriangle } from "lucide-react";
+import { AlertTriangle, FolderPlus, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { gitClient } from "@/lib/git-client";
@@ -17,10 +18,15 @@ interface PickError {
   message: string;
 }
 
-// Single-responsibility: open a folder dialog, validate each selection,
-// and forward valid repositories to the parent.
+// Single-responsibility: open a native folder dialog with multi-select on,
+// validate every chosen folder in parallel, and summarize the result in one
+// toast. Failed folders stay rendered below the button so the user can copy
+// the path / re-pick.
 export function RepositoryPicker({ hasPath, onAdd }: RepositoryPickerProps) {
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(
+    null,
+  );
   const [errors, setErrors] = useState<PickError[]>([]);
 
   const handlePick = async () => {
@@ -35,24 +41,55 @@ export function RepositoryPicker({ hasPath, onAdd }: RepositoryPickerProps) {
       if (!selection) return;
       const paths = Array.isArray(selection) ? selection : [selection];
 
+      // Bucket #1 — paths already in the store; skipped silently in the count.
+      const fresh = paths.filter((p) => !hasPath(p));
+      const skipped = paths.length - fresh.length;
+
+      setProgress({ done: 0, total: fresh.length });
+
+      // Validate each path in parallel. We need typed results to drive the
+      // summary toast, so we use Promise.allSettled and bucket afterwards.
+      let done = 0;
+      const settled = await Promise.all(
+        fresh.map(async (path) => {
+          try {
+            const toplevel = await gitClient.validateRepository(path);
+            return { ok: true as const, path, toplevel };
+          } catch (err) {
+            return {
+              ok: false as const,
+              path,
+              message: err instanceof Error ? err.message : String(err),
+            };
+          } finally {
+            done += 1;
+            setProgress({ done, total: fresh.length });
+          }
+        }),
+      );
+
+      const added: string[] = [];
       const failures: PickError[] = [];
-      for (const path of paths) {
-        if (hasPath(path)) continue;
-        try {
-          const toplevel = await gitClient.validateRepository(path);
-          onAdd(repositoryFromPath(toplevel));
-        } catch (err) {
-          failures.push({
-            path,
-            message: err instanceof Error ? err.message : String(err),
-          });
+      for (const r of settled) {
+        if (r.ok) {
+          const repo = repositoryFromPath(r.toplevel);
+          onAdd(repo);
+          added.push(repo.name);
+        } else {
+          failures.push({ path: r.path, message: r.message });
         }
       }
       setErrors(failures);
+      summarize(added, skipped, failures.length);
     } finally {
       setLoading(false);
+      setProgress(null);
     }
   };
+
+  const label = progress
+    ? `Adding ${progress.done}/${progress.total}…`
+    : "Add repositories";
 
   return (
     <div className="space-y-2">
@@ -68,8 +105,14 @@ export function RepositoryPicker({ hasPath, onAdd }: RepositoryPickerProps) {
         ) : (
           <FolderPlus className="h-4 w-4" />
         )}
-        Add repository
+        {label}
       </Button>
+
+      <p className="px-1 text-[10px] text-muted-foreground">
+        Tip:{" "}
+        <kbd className="rounded bg-muted px-1 font-mono">⌘</kbd> +click to
+        select multiple folders in the dialog.
+      </p>
 
       {errors.length > 0 && (
         <ul className="space-y-1 text-xs text-destructive">
@@ -85,4 +128,46 @@ export function RepositoryPicker({ hasPath, onAdd }: RepositoryPickerProps) {
       )}
     </div>
   );
+}
+
+// Single-responsibility: turn the three counters into one toast. We promote
+// the dominant outcome (added wins over skipped wins over failed) and the
+// description is the secondary tally.
+function summarize(
+  added: string[],
+  skipped: number,
+  failed: number,
+): void {
+  const desc = describeSecondary(skipped, failed);
+  if (added.length > 0) {
+    toast.success(
+      `Added ${added.length} repositor${added.length === 1 ? "y" : "ies"}`,
+      {
+        description:
+          added.length <= 3
+            ? `${added.join(", ")}${desc ? ` · ${desc}` : ""}`
+            : desc || undefined,
+      },
+    );
+    return;
+  }
+  if (skipped > 0 && failed === 0) {
+    toast.info(`Skipped ${skipped} — already in the list`);
+    return;
+  }
+  if (failed > 0) {
+    toast.error(
+      `${failed} folder${failed === 1 ? "" : "s"} couldn't be added`,
+      {
+        description: "Not Git repositories — see the list below the button.",
+      },
+    );
+  }
+}
+
+function describeSecondary(skipped: number, failed: number): string {
+  const parts: string[] = [];
+  if (skipped > 0) parts.push(`${skipped} skipped`);
+  if (failed > 0) parts.push(`${failed} failed`);
+  return parts.join(", ");
 }

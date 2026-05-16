@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { KeyRound, Settings as SettingsIcon, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,12 @@ import { useSettings } from "@/hooks/use-settings";
 import { cn } from "@/lib/utils";
 
 import { Logo } from "./Logo";
-import { SettingsDialog } from "./SettingsDialog";
+
+// Single-responsibility: keep SettingsDialog out of the initial bundle —
+// users open it rarely. Lazy-load on first state flip.
+const SettingsDialog = lazy(() =>
+  import("./SettingsDialog").then((m) => ({ default: m.SettingsDialog })),
+);
 
 // Single-responsibility: bottom sidebar slot showing the active profile,
 // integration status (SSH key + AI key) and a settings shortcut. Replaces
@@ -66,7 +71,11 @@ export function SidebarFooter() {
         </IconHint>
       </footer>
 
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      {settingsOpen ? (
+        <Suspense fallback={null}>
+          <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+        </Suspense>
+      ) : null}
     </>
   );
 }

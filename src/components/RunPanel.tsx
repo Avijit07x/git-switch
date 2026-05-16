@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import {
   GitBranch as GitBranchIcon,
   Play,
@@ -19,7 +19,12 @@ import type { ProcessStatus, Repository, RunTarget } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 import { ProcessOutputPanel } from "./ProcessOutputPanel";
-import { RunConfigDialog } from "./RunConfigDialog";
+
+// Lazy: the run-config UI is opened on demand and pulls in form/validation
+// components that we don't need on every dashboard mount.
+const RunConfigDialog = lazy(() =>
+  import("./RunConfigDialog").then((m) => ({ default: m.RunConfigDialog })),
+);
 
 interface RunPanelProps {
   repository: Repository;
@@ -111,12 +116,16 @@ export function RunPanel({
         </>
       )}
 
-      <RunConfigDialog
-        open={configOpen}
-        onOpenChange={setConfigOpen}
-        repository={repository}
-        onSave={(patch) => onUpdate(repository.id, patch)}
-      />
+      {configOpen ? (
+        <Suspense fallback={null}>
+          <RunConfigDialog
+            open={configOpen}
+            onOpenChange={setConfigOpen}
+            repository={repository}
+            onSave={(patch) => onUpdate(repository.id, patch)}
+          />
+        </Suspense>
+      ) : null}
 
       <ConfirmDialog
         open={portConflict !== null}

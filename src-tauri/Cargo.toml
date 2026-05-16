@@ -5,6 +5,8 @@ description = "Local Git branch manager for macOS"
 authors = ["Avijit Dey"]
 edition = "2021"
 rust-version = "1.77"
+license = "MIT"
+repository = "https://github.com/Avijit07x/git-switch"
 
 [lib]
 name = "git_switch_lib"
@@ -17,14 +19,22 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["macos-private-api"] }
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 thiserror = "2"
-tokio = { version = "1", features = ["process", "io-util", "sync", "macros", "rt-multi-thread", "time"] }
+# Only `rt-multi-thread` is needed for our two `tokio::task::spawn_blocking`
+# calls in process/runner.rs. The rest of our async surface goes through
+# `tauri::async_runtime::spawn_blocking`, which is independent of these
+# features. Tauri itself pulls in any tokio features it needs internally.
+tokio = { version = "1", features = ["rt-multi-thread"] }
 portable-pty = "0.9"
 notify = { version = "7", default-features = false, features = ["macos_fsevent"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[dev-dependencies]
+# Smoke tests need a throwaway git repo. tempfile auto-cleans on drop so
+# parallel test runs don't fight over filesystem state.
+tempfile = "3"
 
 [profile.release]
 panic = "abort"

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertOctagon,
@@ -6,6 +6,7 @@ import {
   ArrowUp,
   FolderGit2,
   GitBranch as GitBranchIcon,
+  Undo2,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -37,9 +38,25 @@ import { BranchSelector } from "./BranchSelector";
 import { ChangedFilesPanel } from "./ChangedFilesPanel";
 import { CommandOutputPanel } from "./CommandOutputPanel";
 import { CommitPanel } from "./CommitPanel";
-import { CreateBranchDialog } from "./CreateBranchDialog";
 import { GitActionsPanel } from "./GitActionsPanel";
 import { RunPanel } from "./RunPanel";
+
+// Lazy — only loaded on first open.
+const CreateBranchDialog = lazy(() =>
+  import("./CreateBranchDialog").then((m) => ({
+    default: m.CreateBranchDialog,
+  })),
+);
+
+const DiffDialog = lazy(() =>
+  import("./DiffDialog").then((m) => ({ default: m.DiffDialog })),
+);
+
+const CommitHistoryDialog = lazy(() =>
+  import("./CommitHistoryDialog").then((m) => ({
+    default: m.CommitHistoryDialog,
+  })),
+);
 
 interface RepositoryDashboardProps {
   repository: Repository;
@@ -121,6 +138,12 @@ function DashboardInner({
   // Dirty-tree switch confirmation.
   const [pendingSwitch, setPendingSwitch] = useState<string | null>(null);
   const [createBranchOpen, setCreateBranchOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [pendingUndo, setPendingUndo] = useState(false);
+  const [diffTarget, setDiffTarget] = useState<{
+    file: string;
+    staged: boolean;
+  } | null>(null);
   const dirty = (statusQuery.data?.files ?? []).length > 0;
 
   const handleSwitchRequest = useCallback(
@@ -145,6 +168,11 @@ function DashboardInner({
   // Drives the "Publish branch" button — true once the current branch has a
   // configured upstream (i.e. has been published at least once).
   const hasUpstream = !!aheadBehindQuery.data?.upstream;
+  // Show the Undo button only when the latest commit is safely local:
+  // either the branch has no upstream at all (brand-new branch) or there
+  // are unpushed commits ahead of upstream. We never expose this for commits
+  // that have been published — that would rewrite shared history.
+  const canUndoLastCommit = !hasUpstream || ahead > 0;
 
   if (validation.isError) {
     return (
@@ -195,6 +223,19 @@ function DashboardInner({
               {behind}
             </Badge>
           ) : null}
+          {canUndoLastCommit ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 gap-1 px-2 text-[11px]"
+              onClick={() => setPendingUndo(true)}
+              disabled={ops.isBusy}
+              title="git reset --soft HEAD~1 — keeps your changes staged"
+            >
+              <Undo2 className="h-3 w-3" />
+              Undo last commit
+            </Button>
+          ) : null}
           {uncommitted > 0 ? (
             <Badge variant="warning">
               {uncommitted} change{uncommitted === 1 ? "" : "s"}
@@ -231,6 +272,7 @@ function DashboardInner({
                 onPush={handlePush}
                 onPushUpstream={ops.pushWithUpstream}
                 onCreateBranch={() => setCreateBranchOpen(true)}
+                onShowHistory={() => setHistoryOpen(true)}
               />
               {lastCommitQuery.data?.message ? (
                 <p className="text-xs text-muted-foreground">
@@ -253,6 +295,7 @@ function DashboardInner({
                 onUnstage={ops.unstageFiles}
                 onIgnore={ops.ignoreFile}
                 onRefresh={handleRefresh}
+                onViewDiff={(file, staged) => setDiffTarget({ file, staged })}
               />
               <Separator />
               <CommitPanel
@@ -291,14 +334,66 @@ function DashboardInner({
         </div>
       </div>
 
-      <CreateBranchDialog
-        open={createBranchOpen}
-        onOpenChange={setCreateBranchOpen}
-        baseBranch={current}
-        busy={ops.operation === "creatingBranch"}
-        onCreate={async (name) => {
-          const result = await ops.createLocalBranch(name);
-          if (result?.success) setCreateBranchOpen(false);
+      {createBranchOpen ? (
+        <Suspense fallback={null}>
+          <CreateBranchDialog
+            open={createBranchOpen}
+            onOpenChange={setCreateBranchOpen}
+            baseBranch={current}
+            busy={ops.operation === "creatingBranch"}
+            onCreate={async (name) => {
+              const result = await ops.createLocalBranch(name);
+              if (result?.success) setCreateBranchOpen(false);
+            }}
+          />
+        </Suspense>
+      ) : null}
+
+      {diffTarget ? (
+        <Suspense fallback={null}>
+          <DiffDialog
+            open={diffTarget !== null}
+            onOpenChange={(open) => {
+              if (!open) setDiffTarget(null);
+            }}
+            repositoryPath={repository.path}
+            file={diffTarget.file}
+            staged={diffTarget.staged}
+          />
+        </Suspense>
+      ) : null}
+
+      {historyOpen ? (
+        <Suspense fallback={null}>
+          <CommitHistoryDialog
+            open={historyOpen}
+            onOpenChange={setHistoryOpen}
+            repository={repository}
+          />
+        </Suspense>
+      ) : null}
+
+      <ConfirmDialog
+        open={pendingUndo}
+        onOpenChange={(open) => {
+          if (!open) setPendingUndo(false);
+        }}
+        title="Undo last commit?"
+        description={
+          <>
+            Runs{" "}
+            <code className="rounded bg-muted px-1 font-mono text-xs">
+              git reset --soft HEAD~1
+            </code>
+            . The commit is removed but every change in it stays{" "}
+            <strong className="text-foreground">staged</strong> — nothing is
+            deleted from your working tree.
+          </>
+        }
+        confirmLabel="Undo commit"
+        onConfirm={() => {
+          void ops.undoLastCommit();
+          setPendingUndo(false);
         }}
       />
 

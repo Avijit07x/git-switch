@@ -7,7 +7,7 @@
 use super::error::GitError;
 use super::service;
 use super::types::{
-    AheadBehind, GitBranchList, GitCommandResult, GitStatus, LastCommit, QuickStatus,
+    AheadBehind, CommitInfo, GitBranchList, GitCommandResult, GitStatus, LastCommit, QuickStatus,
 };
 
 fn map_err(err: GitError) -> String {
@@ -91,6 +91,16 @@ pub async fn quick_status(path: String) -> Result<QuickStatus, String> {
 }
 
 #[tauri::command]
+pub async fn quick_status_batch(
+    paths: Vec<String>,
+) -> Result<Vec<(String, Option<QuickStatus>)>, String> {
+    // No GitError mapping needed — the batch swallows per-repo failures.
+    tauri::async_runtime::spawn_blocking(move || service::quick_status_batch(paths))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn get_status(path: String) -> Result<GitStatus, String> {
     blocking(move || service::get_status(&path)).await
 }
@@ -113,6 +123,11 @@ pub async fn unstage_files(path: String, files: Vec<String>) -> Result<GitComman
 #[tauri::command]
 pub async fn commit_changes(path: String, message: String) -> Result<GitCommandResult, String> {
     blocking(move || service::commit_changes(&path, &message)).await
+}
+
+#[tauri::command]
+pub async fn undo_last_commit(path: String) -> Result<GitCommandResult, String> {
+    blocking(move || service::undo_last_commit(&path)).await
 }
 
 #[tauri::command]
@@ -143,4 +158,21 @@ pub async fn add_to_gitignore(path: String, entry: String) -> Result<GitCommandR
 #[tauri::command]
 pub async fn get_last_commit(path: String) -> Result<LastCommit, String> {
     blocking(move || service::get_last_commit(&path)).await
+}
+
+#[tauri::command]
+pub async fn get_commit_history(
+    path: String,
+    limit: u32,
+) -> Result<Vec<CommitInfo>, String> {
+    blocking(move || service::get_commit_history(&path, limit)).await
+}
+
+#[tauri::command]
+pub async fn get_file_diff(
+    path: String,
+    file: String,
+    staged: bool,
+) -> Result<String, String> {
+    blocking(move || service::get_file_diff(&path, &file, staged)).await
 }

@@ -2,6 +2,7 @@ import { useState } from "react";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
+  Clock,
   Download,
   GitBranchPlus,
   MoreHorizontal,
@@ -38,6 +39,7 @@ interface GitActionsPanelProps {
   onPush: () => Promise<{ success: boolean; stderr: string } | null>;
   onPushUpstream: (branch: string) => Promise<unknown>;
   onCreateBranch: () => void;
+  onShowHistory: () => void;
 }
 
 // Single-responsibility: one *adaptive* primary action that changes label
@@ -62,6 +64,7 @@ export function GitActionsPanel({
   onPush,
   onPushUpstream,
   onCreateBranch,
+  onShowHistory,
 }: GitActionsPanelProps) {
   // Recovery flow: even if `hasUpstream` is true, the remote ref may have
   // been deleted. A push failure with "no upstream" message flips this so
@@ -238,6 +241,14 @@ export function GitActionsPanel({
           >
             <Upload className="h-3.5 w-3.5" />
             <span>Publish branch</span>
+          </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
+
+          <DropdownMenuLabel>Inspect</DropdownMenuLabel>
+          <DropdownMenuItem onSelect={onShowHistory}>
+            <Clock className="h-3.5 w-3.5" />
+            <span>Show history</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

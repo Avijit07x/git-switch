@@ -10,6 +10,9 @@ use process::commands::*;
 use process::ProcessState;
 use tauri::{Manager, RunEvent};
 
+#[cfg(target_os = "macos")]
+use tauri::utils::{config::WindowEffectsConfig, WindowEffect, WindowEffectState};
+
 /// Smoke-test the host environment so the app can warn the user *once* on
 /// launch instead of failing every command silently. Pushed to the blocking
 /// pool so spawning `git --version` (slow first launch on macOS while the
@@ -53,12 +56,35 @@ fn open_external(target: String) -> Result<(), String> {
     Ok(())
 }
 
+// Single-responsibility: apply NSVisualEffectView ("vibrancy") to the main
+// window so the title bar and side panels blend with the desktop wallpaper,
+// matching native macOS apps. The transparent flag in `tauri.conf.json` +
+// the CSS variable token system on the frontend handle the rest.
+#[cfg(target_os = "macos")]
+fn apply_vibrancy(app: &tauri::App) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_effects(WindowEffectsConfig {
+            effects: vec![WindowEffect::HudWindow, WindowEffect::Sidebar],
+            state: Some(WindowEffectState::Active),
+            radius: None,
+            color: None,
+        });
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn apply_vibrancy(_app: &tauri::App) {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(ProcessState::default())
         .manage(FsWatcherState::default())
+        .setup(|app| {
+            apply_vibrancy(app);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             validate_repository,
             clone_repository,
@@ -70,16 +96,20 @@ pub fn run() {
             fetch_remote,
             get_ahead_behind,
             quick_status,
+            quick_status_batch,
             get_status,
             stage_files,
             stage_all,
             unstage_files,
             commit_changes,
+            undo_last_commit,
             push_branch,
             push_branch_with_upstream,
             get_staged_diff,
             add_to_gitignore,
             get_last_commit,
+            get_commit_history,
+            get_file_diff,
             start_process,
             stop_process,
             is_process_running,

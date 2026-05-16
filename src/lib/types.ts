@@ -118,6 +118,16 @@ export interface QuickStatus {
   behind: number;
 }
 
+export interface CommitInfo {
+  hash: string;
+  short: string;
+  author: string;
+  email: string;
+  /** Unix epoch seconds. */
+  timestamp: number;
+  subject: string;
+}
+
 export type GitOperation =
   | "idle"
   | "validating"
@@ -129,6 +139,7 @@ export type GitOperation =
   | "staging"
   | "unstaging"
   | "committing"
+  | "undoing"
   | "pushing"
   | "pushingUpstream"
   | "ignoring"

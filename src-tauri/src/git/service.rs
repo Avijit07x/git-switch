@@ -6,7 +6,7 @@
 use super::error::{GitError, GitResult};
 use super::runner::{resolve_repo_root, run_git};
 use super::types::{
-    AheadBehind, GitBranch, GitBranchList, GitCommandResult, GitStatus, GitStatusFile,
+    AheadBehind, CommitInfo, GitBranch, GitBranchList, GitCommandResult, GitStatus, GitStatusFile,
     LastCommit, QuickStatus,
 };
 
@@ -309,6 +309,30 @@ fn parse_ahead_behind(stdout: &str) -> (u32, u32) {
     (ahead, behind)
 }
 
+/// Batch version — resolve quick status for many repos in parallel using
+/// rayon-free std threads. Returns `None` for any repo whose status couldn't
+/// be read (path moved, .git corrupted) so the sidebar still renders the row
+/// instead of failing the whole batch.
+pub fn quick_status_batch(paths: Vec<String>) -> Vec<(String, Option<QuickStatus>)> {
+    use std::thread;
+    if paths.is_empty() {
+        return Vec::new();
+    }
+    let handles: Vec<_> = paths
+        .into_iter()
+        .map(|p| {
+            thread::spawn(move || {
+                let status = quick_status(&p).ok();
+                (p, status)
+            })
+        })
+        .collect();
+    handles
+        .into_iter()
+        .filter_map(|h| h.join().ok())
+        .collect()
+}
+
 /// Lightweight status used by the sidebar. A single `git status --porcelain
 /// --branch` returns the branch header AND every changed file in one shot,
 /// so we don't have to fan out into `branch --show-current`, `rev-parse
@@ -443,6 +467,29 @@ pub fn commit_changes(path: &str, message: &str) -> GitResult<GitCommandResult> 
     run_git(&root, &["commit", "-m", trimmed])
 }
 
+/// Undo the most recent commit, keeping every change staged in the index
+/// (`git reset --soft HEAD~1`). NEVER passes `--hard` — this is a one-way
+/// safe operation: the only thing lost is the commit object itself, and
+/// only if it's not referenced elsewhere (which the frontend gates on).
+///
+/// Safety: refuses to run when HEAD~1 doesn't exist (the repo only has one
+/// commit). The frontend additionally hides the button when the commit has
+/// already been pushed (would rewrite published history), but we don't
+/// re-check that here — git reset --soft is already non-destructive to data,
+/// and a user who really wants to amend an already-pushed commit can just
+/// push again afterwards.
+pub fn undo_last_commit(path: &str) -> GitResult<GitCommandResult> {
+    let root = resolve_repo_root(path)?;
+    // Verify HEAD~1 exists so we don't try to reset the very first commit.
+    let parent = run_git(&root, &["rev-parse", "--verify", "HEAD~1"])?;
+    if !parent.success {
+        return Err(GitError::InvalidInput(
+            "No previous commit to undo to (this is the first commit).".into(),
+        ));
+    }
+    run_git(&root, &["reset", "--soft", "HEAD~1"])
+}
+
 pub fn push_branch(path: &str) -> GitResult<GitCommandResult> {
     let root = resolve_repo_root(path)?;
     run_git(&root, &["push"])
@@ -518,6 +565,114 @@ pub fn add_to_gitignore(path: &str, entry: &str) -> GitResult<GitCommandResult> 
     })
 }
 
+#[cfg(test)]
+mod tests {
+    //! Smoke tests for the pure parsers + the live git surface. The git-
+    //! invoking tests spawn a real `git init` inside a `tempfile::TempDir`,
+    //! so they need the `git` CLI on PATH (which CI runners have by default).
+
+    use super::*;
+    use std::process::Command;
+
+    // ── Pure parsers ───────────────────────────────────────────────────
+
+    #[test]
+    fn parse_ahead_behind_text_handles_both() {
+        assert_eq!(parse_ahead_behind_text("ahead 3, behind 5"), (3, 5));
+        assert_eq!(parse_ahead_behind_text("ahead 1"), (1, 0));
+        assert_eq!(parse_ahead_behind_text("behind 2"), (0, 2));
+        assert_eq!(parse_ahead_behind_text(""), (0, 0));
+    }
+
+    #[test]
+    fn parse_status_branch_line_detached_and_fresh() {
+        let (b, u, a, be) = parse_status_branch_line("## HEAD (no branch)");
+        assert!(b.is_none() && u.is_none() && a == 0 && be == 0);
+
+        let (b, u, a, be) = parse_status_branch_line("## No commits yet on main");
+        assert!(b.is_none() && u.is_none() && a == 0 && be == 0);
+    }
+
+    #[test]
+    fn parse_status_branch_line_tracking() {
+        let (b, u, a, be) =
+            parse_status_branch_line("## main...origin/main [ahead 1, behind 2]");
+        assert_eq!(b.as_deref(), Some("main"));
+        assert_eq!(u.as_deref(), Some("origin/main"));
+        assert_eq!(a, 1);
+        assert_eq!(be, 2);
+    }
+
+    #[test]
+    fn is_plausible_git_url_accepts_common_shapes() {
+        assert!(is_plausible_git_url("https://github.com/x/y.git"));
+        assert!(is_plausible_git_url("git@github.com:x/y.git"));
+        assert!(is_plausible_git_url("ssh://git@host.tld/x/y"));
+        assert!(!is_plausible_git_url("rm -rf /"));
+        assert!(!is_plausible_git_url(""));
+    }
+
+    // ── Live git surface ───────────────────────────────────────────────
+
+    fn init_repo() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        for args in [
+            &["init", "-q"][..],
+            &["config", "user.email", "test@test"][..],
+            &["config", "user.name", "Test"][..],
+            &["commit", "--allow-empty", "-q", "-m", "initial"][..],
+        ] {
+            let out = Command::new("git")
+                .args(args)
+                .current_dir(dir.path())
+                .output()
+                .expect("spawn git");
+            assert!(
+                out.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr),
+            );
+        }
+        dir
+    }
+
+    #[test]
+    fn validate_repository_returns_toplevel_for_init_repo() {
+        let dir = init_repo();
+        let path = dir.path().to_str().unwrap();
+        let toplevel = validate_repository(path).expect("validate");
+        // macOS resolves /var into /private/var, so compare canonicalized.
+        let want = std::fs::canonicalize(dir.path()).unwrap();
+        let got = std::fs::canonicalize(&toplevel).unwrap();
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn validate_repository_rejects_non_repo() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = validate_repository(dir.path().to_str().unwrap());
+        assert!(result.is_err(), "expected not-a-repo error");
+    }
+
+    #[test]
+    fn quick_status_reports_clean_fresh_repo() {
+        let dir = init_repo();
+        let path = dir.path().to_str().unwrap();
+        let status = quick_status(path).expect("quick_status");
+        assert_eq!(status.changes, 0);
+        assert_eq!(status.ahead, 0);
+        assert_eq!(status.behind, 0);
+    }
+
+    #[test]
+    fn quick_status_counts_untracked() {
+        let dir = init_repo();
+        std::fs::write(dir.path().join("new.txt"), b"hello").unwrap();
+        let status = quick_status(dir.path().to_str().unwrap()).expect("quick_status");
+        assert_eq!(status.changes, 1);
+    }
+}
+
 pub fn get_last_commit(path: &str) -> GitResult<LastCommit> {
     let root = resolve_repo_root(path)?;
     let res = run_git(&root, &["log", "--oneline", "-n", "1"])?;
@@ -530,4 +685,82 @@ pub fn get_last_commit(path: &str) -> GitResult<LastCommit> {
         message,
         result: res,
     })
+}
+
+/// Read the last `limit` commits on the current branch. Uses a custom
+/// `--pretty=format` with `\x1f` (unit separator) between fields and `\x1e`
+/// (record separator) between commits so subjects with tabs/spaces survive.
+pub fn get_commit_history(path: &str, limit: u32) -> GitResult<Vec<CommitInfo>> {
+    let root = resolve_repo_root(path)?;
+    let limit = limit.clamp(1, 500);
+    let limit_str = limit.to_string();
+    // %H = full hash, %h = short, %an = author name, %ae = email,
+    // %at = author timestamp (epoch), %s = subject.
+    let format = "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%at%x1f%s%x1e";
+    let res = run_git(&root, &["log", format, "-n", &limit_str])?;
+    if !res.success {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::new();
+    for record in res.stdout.split('\x1e') {
+        let record = record.trim_start_matches('\n');
+        if record.is_empty() {
+            continue;
+        }
+        let mut parts = record.splitn(6, '\x1f');
+        let hash = parts.next().unwrap_or("").to_string();
+        let short = parts.next().unwrap_or("").to_string();
+        let author = parts.next().unwrap_or("").to_string();
+        let email = parts.next().unwrap_or("").to_string();
+        let timestamp = parts
+            .next()
+            .and_then(|s| s.parse::<i64>().ok())
+            .unwrap_or(0);
+        let subject = parts.next().unwrap_or("").to_string();
+        if hash.is_empty() {
+            continue;
+        }
+        out.push(CommitInfo {
+            hash,
+            short,
+            author,
+            email,
+            timestamp,
+            subject,
+        });
+    }
+    Ok(out)
+}
+
+/// Unified diff for a single file. When `staged` is true, diffs the index
+/// against HEAD (i.e. what's about to be committed); otherwise diffs the
+/// working tree against the index (i.e. what's unstaged). Untracked files
+/// have no diff base, so we synthesize a diff against `/dev/null`.
+pub fn get_file_diff(path: &str, file: &str, staged: bool) -> GitResult<String> {
+    let trimmed = file.trim();
+    if trimmed.is_empty() {
+        return Err(GitError::InvalidInput("File path is required".into()));
+    }
+    let root = resolve_repo_root(path)?;
+    let args: Vec<&str> = if staged {
+        vec!["diff", "--cached", "--no-color", "--", trimmed]
+    } else {
+        vec!["diff", "--no-color", "--", trimmed]
+    };
+    let res = run_git(&root, &args)?;
+    if res.success && !res.stdout.is_empty() {
+        return Ok(res.stdout);
+    }
+    // Empty diff usually means: untracked file. Fall back to comparing the
+    // whole file content against /dev/null so the user still sees something.
+    if !staged {
+        let untracked =
+            run_git(&root, &["diff", "--no-color", "--no-index", "--", "/dev/null", trimmed]);
+        if let Ok(r) = untracked {
+            if !r.stdout.is_empty() {
+                return Ok(r.stdout);
+            }
+        }
+    }
+    Ok(res.stdout)
 }

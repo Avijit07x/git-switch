@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AheadBehind,
+  CommitInfo,
   GitBranchList,
   GitCommandResult,
   GitStatus,
@@ -59,6 +60,13 @@ export const gitClient = {
   quickStatus: (path: string): Promise<QuickStatus> =>
     invoke<QuickStatus>("quick_status", { path }),
 
+  quickStatusBatch: (
+    paths: string[],
+  ): Promise<Array<[string, QuickStatus | null]>> =>
+    invoke<Array<[string, QuickStatus | null]>>("quick_status_batch", {
+      paths,
+    }),
+
   watchRepository: (repoId: string, path: string): Promise<void> =>
     invoke<void>("watch_repository", { repoId, path }),
 
@@ -79,6 +87,9 @@ export const gitClient = {
 
   commitChanges: (path: string, message: string): Promise<GitCommandResult> =>
     invoke<GitCommandResult>("commit_changes", { path, message }),
+
+  undoLastCommit: (path: string): Promise<GitCommandResult> =>
+    invoke<GitCommandResult>("undo_last_commit", { path }),
 
   pushBranch: (path: string): Promise<GitCommandResult> =>
     invoke<GitCommandResult>("push_branch", { path }),
@@ -102,6 +113,16 @@ export const gitClient = {
 
   getLastCommit: (path: string): Promise<LastCommit> =>
     invoke<LastCommit>("get_last_commit", { path }),
+
+  getCommitHistory: (path: string, limit: number): Promise<CommitInfo[]> =>
+    invoke<CommitInfo[]>("get_commit_history", { path, limit }),
+
+  getFileDiff: (
+    path: string,
+    file: string,
+    staged: boolean,
+  ): Promise<string> =>
+    invoke<string>("get_file_diff", { path, file, staged }),
 } as const;
 
 export type GitClient = typeof gitClient;

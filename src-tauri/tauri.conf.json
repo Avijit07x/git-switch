@@ -19,7 +19,8 @@
         "minHeight": 600,
         "titleBarStyle": "Transparent",
         "hiddenTitle": true,
-        "dragDropEnabled": true
+        "dragDropEnabled": true,
+        "transparent": true
       }
     ],
     "security": {

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, Ban, FileText, Undo2 } from "lucide-react";
+import { AlertTriangle, Ban, Eye, FileText, Undo2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,8 @@ interface ChangedFilesPanelProps {
   onUnstage: (files: string[]) => void;
   onIgnore: (file: string) => void;
   onRefresh: () => void;
+  /** Open the inline diff viewer for a specific file. */
+  onViewDiff?: (file: string, staged: boolean) => void;
 }
 
 // Single-responsibility: show changed files, manage selection (including
@@ -34,6 +36,7 @@ export function ChangedFilesPanel({
   onUnstage,
   onIgnore,
   onRefresh,
+  onViewDiff,
 }: ChangedFilesPanelProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [anchorIndex, setAnchorIndex] = useState<number | null>(null);
@@ -213,6 +216,23 @@ export function ChangedFilesPanel({
                   >
                     {sensitive ? "sensitive" : describeStatusCode(file)}
                   </Badge>
+                  {onViewDiff ? (
+                    <IconHint label="View diff" side="left">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="size-6 text-muted-foreground hover:text-foreground"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onViewDiff(file.path, file.staged);
+                        }}
+                        disabled={busy || file.untracked}
+                        aria-label={`View diff for ${file.path}`}
+                      >
+                        <Eye className="size-3.5" />
+                      </Button>
+                    </IconHint>
+                  ) : null}
                   {file.staged ? (
                     <IconHint label="Unstage this file" side="left">
                       <Button

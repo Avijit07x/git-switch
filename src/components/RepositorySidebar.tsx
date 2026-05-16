@@ -1,14 +1,13 @@
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { Download, FolderTree, Plus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { useQuickStatusBatch } from "@/hooks/use-git-operations";
 import { cn } from "@/lib/utils";
 import type { ProjectGroup, Repository } from "@/lib/types";
-import { CloneDialog } from "./CloneDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { GroupDialog } from "./GroupDialog";
 import { IconHint } from "./IconHint";
 import { Logo } from "./Logo";
 import { RepositoryPicker } from "./RepositoryPicker";
@@ -16,6 +15,15 @@ import { RepositorySidebarRow } from "./RepositorySidebarRow";
 import { SidebarFooter } from "./SidebarFooter";
 import { StatusLegend } from "./StatusLegend";
 import { ThemeToggle } from "./ThemeToggle";
+
+// Lazy: both dialogs are rarely opened and would otherwise bloat the
+// sidebar's chunk (which loads on every launch).
+const CloneDialog = lazy(() =>
+  import("./CloneDialog").then((m) => ({ default: m.CloneDialog })),
+);
+const GroupDialog = lazy(() =>
+  import("./GroupDialog").then((m) => ({ default: m.GroupDialog })),
+);
 
 interface RepositorySidebarProps {
   repositories: Repository[];
@@ -51,6 +59,11 @@ export function RepositorySidebar({
     useState<ProjectGroup | null>(null);
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
+
+  // One IPC fetches quick status for every repo and primes each row's
+  // per-repo cache — rows themselves still call `useQuickStatus` and just
+  // see instant cache hits.
+  useQuickStatusBatch(repositories);
 
   const confirmRemove = () => {
     if (pendingRemoval) onRemove(pendingRemoval.id);
@@ -192,19 +205,27 @@ export function RepositorySidebar({
 
       <SidebarFooter />
 
-      <CloneDialog
-        open={cloneOpen}
-        onOpenChange={setCloneOpen}
-        onCloned={onAdd}
-      />
+      {cloneOpen ? (
+        <Suspense fallback={null}>
+          <CloneDialog
+            open={cloneOpen}
+            onOpenChange={setCloneOpen}
+            onCloned={onAdd}
+          />
+        </Suspense>
+      ) : null}
 
-      <GroupDialog
-        open={groupDialogOpen}
-        onOpenChange={setGroupDialogOpen}
-        repositories={repositories}
-        group={null}
-        onSave={onCreateGroup}
-      />
+      {groupDialogOpen ? (
+        <Suspense fallback={null}>
+          <GroupDialog
+            open={groupDialogOpen}
+            onOpenChange={setGroupDialogOpen}
+            repositories={repositories}
+            group={null}
+            onSave={onCreateGroup}
+          />
+        </Suspense>
+      ) : null}
 
       <ConfirmDialog
         open={pendingGroupRemoval !== null}

@@ -12,6 +12,7 @@
 [![Tailwind](https://img.shields.io/badge/Tailwind-v4-38BDF8?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![Rust](https://img.shields.io/badge/Rust-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![macOS](https://img.shields.io/badge/macOS-Apple_Silicon_%2B_Intel-000000?logo=apple&logoColor=white)](#install)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 </div>
 
@@ -20,12 +21,21 @@
 ## Features
 
 **Git**
-- Multi-repo sidebar — folder picker or drag-and-drop, persists across launches
-- Searchable branch picker, dirty-tree guard before switching, remote-as-local checkout
-- Stage / commit / push / pull, with `push -u origin <branch>` fallback when upstream is missing
-- Sensitive files (`.env`, `*.pem`, SSH keys, …) surface at the top in red — one click adds them to `.gitignore` and untracks
+- Multi-repo sidebar — folder picker (multi-select) or drag-and-drop, persists across launches
+- Per-repo status tints in the sidebar — behind = rose · uncommitted = amber · ahead = emerald
+- Searchable branch picker · create branch from scratch (`git switch -c`) or check out remote as local
+- Dirty-tree guard before switching, with confirmation dialog
+- Adaptive primary action button — switches between **Pull / Push / Publish / Fetch** based on ahead / behind / upstream state
+- `⋯` overflow menu consolidates every git action: refresh, fetch, pull, push, create branch, publish branch, show history
+- Publish branch with one click (`git push -u origin <branch>`) when upstream is missing
+- Stage / unstage selected · stage all · commit · optimistic UI (file list flips instantly)
+- **Undo last commit** — safe `git reset --soft HEAD~1`, only shown when the commit hasn't been pushed
+- **Inline diff viewer** for any changed file (eye icon on the row) — syntax-light unified diff with sticky line-number gutter
+- **Commit history popup** — last 50 commits with author, short hash, relative time
+- Sensitive files (`.env`, `*.pem`, SSH keys, …) surface at the top of the changes list in red — one click adds them to `.gitignore` and untracks
+- Ahead / behind indicators in the dashboard header
+- Native FS watcher (`notify` / FSEvents) auto-refreshes the GUI when the terminal touches the repo
 - Shift-click range select · `⌘↵` commit · `⌘R` refresh · `⌘P` pull · `⌘⇧P` push
-- Auto-refresh on window focus so the GUI stays in sync with your terminal
 
 **AI commits**
 - ✨ Generate Conventional-Commits messages from the staged diff via Gemini
@@ -41,12 +51,18 @@
 
 **Groups**
 - Bundle multiple repos as a group, fire them all in parallel with one click
+- Filterable picker with sticky select-all row (handy when you've added 20+ repos)
 - Color-coded bulk actions (Run / Stop / Restart) react to live aggregate status
 - Each member runs with **its own** saved config — the group is just a launcher
 
-**UX**
+**UX & performance**
 - Light + dark themes that propagate instantly across every panel (including xterm.js)
-- Sonner toasts, tooltips on every icon, rolling command-output log with per-row status
+- macOS-style frosted-glass toasts (Sonner) with severity-encoded icons
+- Tooltips on every icon and the adaptive sync button (shows the underlying git command)
+- Rolling command-output log with per-row status
+- Async backend — `git fetch` / `pull` / `push` never freeze the UI
+- Batched sidebar refresh — one IPC fetches quick-status for every repo in parallel
+- Lazy-loaded heavy panels (xterm.js, every dialog) — small initial JS payload
 
 ---
 
@@ -60,7 +76,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh && source "$HOME/
 brew install librsvg                                                         # for icon generation
 
 # Clone + run
-git clone <this-repo>
+git clone git@github.com:Avijit07x/git-switch.git
 cd git-switch
 yarn install
 yarn tauri:dev
@@ -100,20 +116,12 @@ xattr -dr com.apple.quarantine "/Applications/Git Switch.app"
 
 ## Safety
 
-Out of scope by design: force push, rebase, reset, discard, stash, merge-conflict resolution, raw command input. Auth relies on your existing Git setup (SSH keys, Keychain, `gh`, credential helper) — Git Switch stores nothing related to remotes.
+Out of scope by design: force push, rebase, hard reset, discard, stash, merge-conflict resolution, raw command input. The one carve-out is `git reset --soft HEAD~1` (the **Undo last commit** button), which never touches your working tree and only appears when the commit hasn't been pushed.
+
+Auth relies on your existing Git setup (SSH keys, Keychain, `gh`, credential helper) — Git Switch stores nothing related to remotes.
 
 The Gemini API key (if set) lives in `localStorage` and is only ever sent to `generativelanguage.googleapis.com` when you click ✨ Generate.
 
----
-
-## Roadmap
-
-- [ ] Inline diff viewer
-- [ ] Commit history (`git log` panel)
-- [ ] Fetch + ahead/behind indicators
-- [ ] Per-repo status badges in the sidebar
-- [ ] File-watcher driven auto-refresh
-- [ ] Resizable panels · macOS vibrancy · Windows + Linux builds
 
 ---
 

@@ -18,3 +18,4 @@ src-tauri/Cargo.lock
 *.sln
 *.sw?
 .env
+TODO.md

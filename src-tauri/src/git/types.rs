@@ -80,3 +80,21 @@ pub struct QuickStatus {
     pub ahead: u32,
     pub behind: u32,
 }
+
+/// Single commit row for the history panel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitInfo {
+    /// Full SHA (40 hex chars).
+    pub hash: String,
+    /// Short SHA (first 7 chars).
+    pub short: String,
+    /// Author display name.
+    pub author: String,
+    /// Author email.
+    pub email: String,
+    /// Unix epoch seconds.
+    pub timestamp: i64,
+    /// First line of the commit message.
+    pub subject: String,
+}

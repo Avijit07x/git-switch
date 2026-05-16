@@ -6,6 +6,7 @@ import { gitClient } from "@/lib/git-client";
 import { useIsAppReady } from "@/stores/use-app-ready-store";
 import type {
   AheadBehind,
+  CommitInfo,
   GitBranchList,
   GitCommandResult,
   GitOperation,
@@ -21,6 +22,7 @@ const TOASTABLE_OPS: ReadonlySet<GitOperation> = new Set<GitOperation>([
   "pushing",
   "pushingUpstream",
   "committing",
+  "undoing",
   "switching",
   "creatingBranch",
   "fetching",
@@ -40,9 +42,11 @@ interface OperationDeps {
   onLogComplete: (id: string, result: GitCommandResult) => void;
 }
 
-// Keep the loading state visible for at least this long so the spinner never
-// flashes too fast to perceive (common for `git pull` when already up to date).
-const MIN_LOADING_MS = 400;
+// Tiny floor so a 5ms operation doesn't visually flicker, but small enough
+// that fast ops still feel instant. Used to be 400ms — left over from when
+// every command blocked the IPC thread. With the async backend that delay
+// just makes the app feel sluggish.
+const MIN_LOADING_MS = 100;
 
 const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -177,22 +181,51 @@ export function useGitOperations({
     [repository, run],
   );
 
+  // Optimistic patcher for the `status` query — flips `staged`/`unstaged` on
+  // the matching files in cache so the file list updates the instant the
+  // user clicks, without waiting for the round-trip + invalidation cycle.
+  // If git fails, the post-run `invalidate()` rolls everything back to the
+  // server's truth.
+  const patchStatus = useCallback(
+    (matcher: (path: string) => boolean, staged: boolean) => {
+      if (!repository) return;
+      queryClient.setQueryData<GitStatus>(
+        ["status", repository.id],
+        (prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            files: prev.files.map((f) =>
+              matcher(f.path)
+                ? { ...f, staged, unstaged: !staged, untracked: false }
+                : f,
+            ),
+          };
+        },
+      );
+    },
+    [queryClient, repository],
+  );
+
   const stageAll = useCallback(
-    () =>
-      repository
-        ? run("staging", "add .", () => gitClient.stageAll(repository.path))
-        : Promise.resolve(null),
-    [repository, run],
+    () => {
+      if (!repository) return Promise.resolve(null);
+      patchStatus(() => true, true);
+      return run("staging", "add .", () => gitClient.stageAll(repository.path));
+    },
+    [repository, run, patchStatus],
   );
 
   const stageFiles = useCallback(
-    (files: string[]) =>
-      repository
-        ? run("staging", `add ${files.length} file(s)`, () =>
-            gitClient.stageFiles(repository.path, files),
-          )
-        : Promise.resolve(null),
-    [repository, run],
+    (files: string[]) => {
+      if (!repository) return Promise.resolve(null);
+      const set = new Set(files);
+      patchStatus((p) => set.has(p), true);
+      return run("staging", `add ${files.length} file(s)`, () =>
+        gitClient.stageFiles(repository.path, files),
+      );
+    },
+    [repository, run, patchStatus],
   );
 
   const ignoreFile = useCallback(
@@ -206,13 +239,15 @@ export function useGitOperations({
   );
 
   const unstageFiles = useCallback(
-    (files: string[]) =>
-      repository
-        ? run("unstaging", `restore --staged ${files.length} file(s)`, () =>
-            gitClient.unstageFiles(repository.path, files),
-          )
-        : Promise.resolve(null),
-    [repository, run],
+    (files: string[]) => {
+      if (!repository) return Promise.resolve(null);
+      const set = new Set(files);
+      patchStatus((p) => set.has(p), false);
+      return run("unstaging", `restore --staged ${files.length} file(s)`, () =>
+        gitClient.unstageFiles(repository.path, files),
+      );
+    },
+    [repository, run, patchStatus],
   );
 
   const commit = useCallback(
@@ -220,6 +255,16 @@ export function useGitOperations({
       repository
         ? run("committing", `commit -m "${truncate(message, 40)}"`, () =>
             gitClient.commitChanges(repository.path, message),
+          )
+        : Promise.resolve(null),
+    [repository, run],
+  );
+
+  const undoLastCommit = useCallback(
+    () =>
+      repository
+        ? run("undoing", "reset --soft HEAD~1", () =>
+            gitClient.undoLastCommit(repository.path),
           )
         : Promise.resolve(null),
     [repository, run],
@@ -256,6 +301,7 @@ export function useGitOperations({
     unstageFiles,
     ignoreFile,
     commit,
+    undoLastCommit,
     push,
     pushWithUpstream,
     invalidate,
@@ -302,6 +348,19 @@ export function useLastCommit(
   });
 }
 
+const HISTORY_LIMIT = 50;
+
+export function useCommitHistory(
+  repository: Repository | null,
+): UseQueryResult<CommitInfo[], Error> {
+  const ready = useIsAppReady();
+  return useQuery({
+    queryKey: ["commitHistory", repository?.id],
+    queryFn: () => gitClient.getCommitHistory(repository!.path, HISTORY_LIMIT),
+    enabled: ready && !!repository,
+  });
+}
+
 // Sidebar/dashboard metadata changes rarely on its own — let cached values
 // serve subsequent reads instantly. The file watcher and explicit
 // invalidations still force a refresh whenever something actually moves.
@@ -328,6 +387,41 @@ export function useQuickStatus(
     queryFn: () => gitClient.quickStatus(repository!.path),
     enabled: ready && !!repository,
     staleTime: QUICK_STALE_MS,
+  });
+}
+
+// Single-responsibility: fetch quick status for every repo in a single IPC
+// and prime each per-repo React Query cache entry. Individual sidebar rows
+// then read from `useQuickStatus` and see instant cache hits — no per-row
+// IPC fan-out. With 10 repos this drops sidebar refreshes from 10 round-
+// trips to 1.
+export function useQuickStatusBatch(repositories: Repository[]): void {
+  const queryClient = useQueryClient();
+  const ready = useIsAppReady();
+  // Stable key for the effect — only re-run when the *set* of repos changes,
+  // not on every parent re-render.
+  const pathsKey = repositories.map((r) => `${r.id}:${r.path}`).join("|");
+
+  useQuery({
+    queryKey: ["quickStatusBatch", pathsKey],
+    queryFn: async () => {
+      const paths = repositories.map((r) => r.path);
+      const results = await gitClient.quickStatusBatch(paths);
+      // Walk the result tuple and write into per-repo cache slots so the
+      // existing `useQuickStatus(repo)` hooks pick them up without a refetch.
+      const byPath = new Map(results);
+      for (const repo of repositories) {
+        const status = byPath.get(repo.path);
+        if (status) {
+          queryClient.setQueryData(["quickStatus", repo.id], status);
+        }
+      }
+      return results;
+    },
+    enabled: ready && repositories.length > 0,
+    staleTime: QUICK_STALE_MS,
+    // Don't render the batch result anywhere — it's pure side-effect.
+    notifyOnChangeProps: [],
   });
 }
 

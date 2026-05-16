@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  typecheck:
+    name: Typecheck (TS) + Cargo check (Rust)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install JS deps
+        run: yarn install --frozen-lockfile
+
+      - name: TypeScript check
+        run: yarn build
+
+      - name: Cargo check
+        working-directory: src-tauri
+        run: cargo check --locked
+
+      # Smoke + parser tests. Catches "the code compiles but doesn't run"
+      # regressions — e.g. when a git CLI format string drifts and a parser
+      # silently returns empty. Real git is required (CI runners include it
+      # by default; locally just `cargo test --manifest-path src-tauri/Cargo.toml`).
+      - name: Cargo test
+        working-directory: src-tauri
+        run: cargo test --locked
+
+      - name: Cargo fmt
+        working-directory: src-tauri
+        run: cargo fmt --all -- --check
+        continue-on-error: true
+
+      - name: Cargo clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+        continue-on-error: true

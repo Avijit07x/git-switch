@@ -16,7 +16,7 @@ import type { Repository } from "@/lib/types";
 // by *time* per repo (COOLDOWN_MS) AND by max in-flight requests.
 
 const FOCUS_COOLDOWN_MS = 60_000;
-const MAX_CONCURRENT_FETCHES = 3;
+const MAX_CONCURRENT_FETCHES = 5;
 
 // Single-responsibility: walk `items` with at most `limit` in flight at once.
 // Each task runs `worker(item)`; failures are swallowed (offline/no remote is

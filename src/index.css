@@ -90,6 +90,13 @@
     font-family:
       -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
       sans-serif;
+    /* Vibrancy note: previous iteration set body to transparent so the
+       NSVisualEffect from Rust would bleed through. That broke every
+       surface using `bg-background` (dialogs, popovers) because Webview
+       inherited the vibrancy through opaque tokens in unexpected ways.
+       Title-bar / drag-region areas still pick up vibrancy via the
+       transparent areas Tauri reserves; bringing the body back to opaque
+       background fixes dialog contrast everywhere else. */
     /* Native macOS chrome doesn't let you select random UI text — disable
        app-wide so labels, buttons, sidebar rows feel like a real desktop
        app. Inputs / code / terminal opt back in below. */

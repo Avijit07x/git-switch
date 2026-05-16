@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -20,15 +20,26 @@ pub struct FsWatcherState {
 
 struct WatchHandle {
     _watcher: RecommendedWatcher,
-    /// Flag flipped to false when the entry is dropped, telling the debouncer
-    /// thread to exit cleanly.
-    alive: Arc<Mutex<bool>>,
+    /// Signals the debouncer thread to wake up — either because a new event
+    /// arrived (re-arms the timer) or because we're shutting down.
+    signal: Arc<(Mutex<DebouncerState>, Condvar)>,
+}
+
+#[derive(Default)]
+struct DebouncerState {
+    /// When the most recent raw FS event landed. None = no pending event.
+    last_event: Option<Instant>,
+    /// Flipped to false when the handle is dropped; the debouncer thread
+    /// reads this on every wake to know whether to exit.
+    alive: bool,
 }
 
 impl Drop for WatchHandle {
     fn drop(&mut self) {
-        if let Ok(mut a) = self.alive.lock() {
-            *a = false;
+        let (lock, cvar) = &*self.signal;
+        if let Ok(mut state) = lock.lock() {
+            state.alive = false;
+            cvar.notify_all();
         }
     }
 }
@@ -53,20 +64,30 @@ pub fn start_watching(
     // Idempotent: re-watching the same repo replaces the old handle.
     map.remove(&repo_id);
 
-    let last_event: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
-    let alive: Arc<Mutex<bool>> = Arc::new(Mutex::new(true));
+    // Shared (state, condvar) — the notify callback writes `last_event` and
+    // signals; the debouncer thread waits on the condvar instead of spinning
+    // a 100ms polling loop, which was burning one CPU thread per watcher.
+    let signal: Arc<(Mutex<DebouncerState>, Condvar)> = Arc::new((
+        Mutex::new(DebouncerState {
+            last_event: None,
+            alive: true,
+        }),
+        Condvar::new(),
+    ));
 
     // ── notify handler: filter noise, then bump `last_event` so the
     //    debouncer thread fires a single emit per quiet-period.
-    let last_event_for_handler = Arc::clone(&last_event);
+    let signal_for_handler = Arc::clone(&signal);
     let mut watcher = RecommendedWatcher::new(
         move |res: Result<Event, notify::Error>| {
             let Ok(event) = res else { return };
             if event.paths.iter().all(|p| should_ignore(p)) {
                 return;
             }
-            if let Ok(mut le) = last_event_for_handler.lock() {
-                *le = Some(Instant::now());
+            let (lock, cvar) = &*signal_for_handler;
+            if let Ok(mut s) = lock.lock() {
+                s.last_event = Some(Instant::now());
+                cvar.notify_all();
             }
         },
         Config::default(),
@@ -77,34 +98,58 @@ pub fn start_watching(
         .watch(&path, RecursiveMode::Recursive)
         .map_err(|e| e.to_string())?;
 
-    // ── debouncer thread: every 100ms check whether DEBOUNCE_MS has elapsed
-    //    since the last raw event. If so, emit once and clear the marker.
-    let last_event_for_thread = Arc::clone(&last_event);
-    let alive_for_thread = Arc::clone(&alive);
+    // ── debouncer thread: blocks on the condvar until an event arrives,
+    //    then waits the remaining quiet-period, then emits. No spinning.
+    let signal_for_thread = Arc::clone(&signal);
     let app_for_thread = app.clone();
     let repo_id_for_thread = repo_id.clone();
+    let debounce = Duration::from_millis(DEBOUNCE_MS);
     thread::spawn(move || {
+        let (lock, cvar) = &*signal_for_thread;
         loop {
-            thread::sleep(Duration::from_millis(100));
-            if !*alive_for_thread.lock().unwrap_or_else(|e| e.into_inner()) {
-                break;
-            }
-            let should_emit = {
-                let mut le = match last_event_for_thread.lock() {
-                    Ok(g) => g,
-                    Err(_) => continue,
-                };
-                match *le {
-                    Some(ts) if ts.elapsed() >= Duration::from_millis(DEBOUNCE_MS) => {
-                        *le = None;
-                        true
-                    }
-                    _ => false,
-                }
+            let mut state = match lock.lock() {
+                Ok(g) => g,
+                Err(_) => return,
             };
-            if should_emit {
-                let _ = app_for_thread
-                    .emit(&format!("git-fs-change:{repo_id_for_thread}"), ());
+            // Wait until either: a new event has been recorded, or we're
+            // told to shut down.
+            while state.alive && state.last_event.is_none() {
+                state = match cvar.wait(state) {
+                    Ok(g) => g,
+                    Err(_) => return,
+                };
+            }
+            if !state.alive {
+                return;
+            }
+            // We have a pending event. Compute remaining quiet time, drop
+            // the lock, and sleep — if a *new* event arrives during the
+            // sleep, the next iteration will find `last_event` advanced and
+            // wait longer. Effectively: emit once the FS has been quiet for
+            // DEBOUNCE_MS.
+            let pending = state.last_event.expect("guarded above");
+            let elapsed = pending.elapsed();
+            let to_wait = debounce.checked_sub(elapsed).unwrap_or_default();
+            drop(state);
+            if !to_wait.is_zero() {
+                thread::sleep(to_wait);
+            }
+            // Re-check: maybe a new event reset the timer while we slept.
+            let mut state = match lock.lock() {
+                Ok(g) => g,
+                Err(_) => return,
+            };
+            if !state.alive {
+                return;
+            }
+            let still = state.last_event;
+            if let Some(ts) = still {
+                if ts.elapsed() >= debounce {
+                    state.last_event = None;
+                    drop(state);
+                    let _ = app_for_thread
+                        .emit(&format!("git-fs-change:{repo_id_for_thread}"), ());
+                }
             }
         }
     });
@@ -113,10 +158,9 @@ pub fn start_watching(
         repo_id,
         WatchHandle {
             _watcher: watcher,
-            alive,
+            signal,
         },
     );
-    drop(last_event);
     Ok(())
 }
 
