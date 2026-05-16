@@ -53,17 +53,12 @@ jobs:
 
       # Build a universal binary so a single .dmg works on both Apple Silicon
       # and Intel Macs. Tauri's CLI orchestrates the dual build + lipo step.
+      # No Apple env vars passed → Tauri falls back to ad-hoc signing
+      # (the `-` signing identity in tauri.conf.json) and skips notarization.
+      # First-launch users will need to right-click → Open once; that's the
+      # only cost. To enable real notarized signing later, set APPLE_* secrets
+      # in repo settings and reintroduce them here.
       - name: Build Tauri (universal)
-        env:
-          # If notarization secrets are present, tauri-build picks them up
-          # automatically and produces a notarized + stapled .dmg. Otherwise
-          # the build still succeeds with an ad-hoc signature.
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: yarn tauri build --target universal-apple-darwin
 
       - name: Collect artifacts
