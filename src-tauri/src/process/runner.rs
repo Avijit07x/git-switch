@@ -81,6 +81,32 @@ fn killpg(pid: u32) {
 #[cfg(not(unix))]
 fn killpg(_pid: u32) {}
 
+// Single-responsibility: pick the right login-style shell for the host OS
+// and return `(shell_path, args_to_run_user_command)`. On Unix we use
+// `$SHELL -lic <cmd>` so the user's PATH (nvm, fnm, asdf, pnpm) is sourced.
+// On Windows there's no `/bin/sh`; cmd.exe is universal, starts fast, and
+// handles npm/yarn `.cmd` shims correctly.
+fn resolve_shell(command: &str) -> (String, Vec<String>) {
+    #[cfg(target_os = "windows")]
+    {
+        let shell = std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string());
+        // /D — skip AutoRun, /S — strict quoting, /C — run and exit.
+        let args = vec![
+            "/D".to_string(),
+            "/S".to_string(),
+            "/C".to_string(),
+            command.to_string(),
+        ];
+        (shell, args)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+        let args = vec!["-lic".to_string(), command.to_string()];
+        (shell, args)
+    }
+}
+
 pub fn stop(state: &ProcessState, repo_id: &str) -> bool {
     let handle = state.inner.lock().unwrap().remove(repo_id);
     if let Some(mut h) = handle {
@@ -251,7 +277,7 @@ pub async fn start(
         return Err("Command is empty".into());
     }
 
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+    let (shell, shell_args) = resolve_shell(&command);
     let data_evt = data_event(&repo_id);
 
     // Pre-flight: only free the port if the frontend explicitly asks (after
@@ -297,11 +323,9 @@ pub async fn start(
         .map_err(|e| format!("openpty failed: {e}"))?;
 
     let mut builder = CommandBuilder::new(&shell);
-    // -l: login shell (sources ~/.zprofile / ~/.bash_profile)
-    // -i: interactive shell (sources ~/.zshrc / ~/.bashrc — this is where nvm,
-    //     fnm, asdf, pnpm, etc. live, so PATH matches Terminal.app exactly).
-    // -c: run the user's command and exit.
-    builder.args(["-lic", &command]);
+    for arg in &shell_args {
+        builder.arg(arg);
+    }
     builder.cwd(&cwd);
     // Force programs that check $TERM to behave correctly.
     builder.env("TERM", "xterm-256color");
