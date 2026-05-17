@@ -1,6 +1,6 @@
 [package]
 name = "git-switch"
-version = "0.4.0"
+version = "0.5.0"
 description = "Local Git branch manager for macOS"
 authors = ["Avijit Dey"]
 edition = "2021"

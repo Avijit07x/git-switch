@@ -62,9 +62,16 @@ banner() {
 
 detect_os() {
   case "$(uname -s)" in
-    Darwin) OS="macos" ;;
-    Linux)  OS="linux" ;;
-    *)      abort "Unsupported OS: $(uname -s). Supported: macOS, Linux." ;;
+    Darwin)                          OS="macos" ;;
+    Linux)                           OS="linux" ;;
+    MINGW*|MSYS*|CYGWIN*|Windows_NT)
+      err "Windows shells (Git Bash / MSYS / Cygwin) can't run this script reliably."
+      err "For Windows, install Git Switch from PowerShell with:"
+      printf "\n      %sirm https://raw.githubusercontent.com/%s/main/install.ps1 | iex%s\n\n" \
+        "$C_DIM" "$REPO" "$C_RESET"
+      exit 1
+      ;;
+    *) abort "Unsupported OS: $(uname -s). Supported: macOS, Linux, Windows (via install.ps1)." ;;
   esac
 }
 

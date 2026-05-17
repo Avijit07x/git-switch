@@ -147,3 +147,57 @@ jobs:
         with:
           name: git-switch-linux-x86_64
           path: dist-release/*
+
+  # ── Windows x86_64 build ──────────────────────────────────────────────
+  build-windows:
+    name: Build Windows (x86_64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: release-windows
+
+      - name: Install JS deps
+        run: yarn install --frozen-lockfile
+
+      - name: Build Tauri (.msi + .exe)
+        run: yarn tauri build
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUNDLE_DIR="src-tauri/target/release/bundle"
+          mkdir -p dist-release
+          find "$BUNDLE_DIR/msi" -name '*.msi' -exec cp {} dist-release/ \; || true
+          find "$BUNDLE_DIR/nsis" -name '*.exe' -exec cp {} dist-release/ \; || true
+          ls -lah dist-release/
+
+      - name: Upload Windows artifacts to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          files: |
+            dist-release/*.msi
+            dist-release/*.exe
+
+      - name: Upload workflow artifacts (no tag)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: git-switch-windows-x86_64
+          path: dist-release/*

@@ -4,7 +4,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import App from "@/app/App";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { markOs } from "@/lib/platform";
 import "./index.css";
+
+markOs();
 // Sonner v2 ships its base styles as a separate file (positioning, surface,
 // animations). Without this import the production build has no toast surface
 // and the position prop falls back to the default top-right.

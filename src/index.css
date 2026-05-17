@@ -256,3 +256,40 @@
     -moz-appearance: textfield;
   }
 }
+
+/* ── Linux (WebKitGTK) smoothness pass ──────────────────────────────────
+   Keep the same motion language as macOS — fade, scale, slide — but force
+   every animated surface onto its own GPU layer so WebKitGTK's compositor
+   doesn't repaint on every frame. The combination of `will-change` and
+   `translateZ(0)` promotes the element to a backing layer once, then
+   transforms it via the GPU for the duration of the animation. Durations
+   are nudged slightly shorter so motion lands before the user notices the
+   compositor warming up. Colors keep transitioning normally; only the
+   theme/accent root tokens skip their transition since the cascade hit
+   is global. */
+
+html[data-os="linux"] [data-state][class*="animate-in"],
+html[data-os="linux"] [data-state][class*="animate-out"],
+html[data-os="linux"] [data-side][class*="animate-in"],
+html[data-os="linux"] [data-side][class*="animate-out"],
+html[data-os="linux"] [data-radix-popper-content-wrapper] > *,
+html[data-os="linux"] [role="dialog"],
+html[data-os="linux"] [role="menu"],
+html[data-os="linux"] [role="listbox"],
+html[data-os="linux"] [role="tooltip"] {
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  animation-duration: 140ms;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
+html[data-os="linux"] [data-state="closed"][class*="animate-out"],
+html[data-os="linux"] [data-side][data-state="closed"][class*="animate-out"] {
+  animation-duration: 100ms;
+}
+
+html[data-os="linux"]:where(.dark, [data-accent]) {
+  transition: none !important;
+}
+

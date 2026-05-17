@@ -11,6 +11,7 @@ A fast, native Git client that runs your dev servers too.
 [![Rust](https://img.shields.io/badge/Rust-stable-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org)
 [![macOS](https://img.shields.io/badge/macOS-Apple_Silicon_%2B_Intel-000?logo=apple&logoColor=white)](#install)
 [![Linux](https://img.shields.io/badge/Linux-x86__64-FCC624?logo=linux&logoColor=black)](#install)
+[![Windows](https://img.shields.io/badge/Windows-x86__64-0078D6?logo=windows&logoColor=white)](#install)
 [![MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 </div>
@@ -39,11 +40,19 @@ window.
 
 ## Install
 
-One command. Detects your OS, fetches the latest release, drops it in
-the right place. Re-run to update.
+One command. Fetches the latest release for your OS and drops it in the
+right place. Re-run to update.
+
+**macOS / Linux**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Avijit07x/git-switch/main/install.sh | bash
+```
+
+**Windows** (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/Avijit07x/git-switch/main/install.ps1 | iex
 ```
 
 ### Build from source
