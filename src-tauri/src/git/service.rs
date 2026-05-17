@@ -94,7 +94,7 @@ pub fn clone_repository(
         return Err(GitError::PathNotFound(parent.display().to_string()));
     }
 
-    let mut cmd = std::process::Command::new("git");
+    let mut cmd = crate::platform::command("git");
     cmd.args(["clone", url, target_dir]);
 
     if let Some(key) = ssh_key_path {

@@ -194,7 +194,7 @@ pub fn detect_port_from_env(cwd: &str) -> Option<u16> {
 /// Used by the frontend to ask the user whether to kill them before Run.
 pub fn pids_on_port(port: u16) -> Vec<u32> {
     let mut pids = Vec::new();
-    let output = std::process::Command::new("lsof")
+    let output = crate::platform::command("lsof")
         .args(["-ti", &format!(":{port}")])
         .output();
     if let Ok(out) = output {
@@ -211,7 +211,7 @@ pub fn pids_on_port(port: u16) -> Vec<u32> {
 /// Best-effort — silently no-ops if lsof isn't available or nothing matches.
 fn free_port(port: u16) -> Vec<u32> {
     let mut killed = Vec::new();
-    let output = std::process::Command::new("lsof")
+    let output = crate::platform::command("lsof")
         .args(["-ti", &format!(":{port}")])
         .output();
     if let Ok(out) = output {

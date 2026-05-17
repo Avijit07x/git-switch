@@ -1,5 +1,6 @@
 mod fs;
 mod git;
+mod platform;
 mod process;
 mod repository;
 mod tray;
@@ -20,7 +21,7 @@ use tray::{update_tray_status, TrayStatus};
 #[tauri::command]
 async fn check_git() -> Result<Option<String>, String> {
     tauri::async_runtime::spawn_blocking(|| {
-        let output = std::process::Command::new("git").arg("--version").output();
+        let output = crate::platform::command("git").arg("--version").output();
         match output {
             Ok(out) if out.status.success() => {
                 Some(String::from_utf8_lossy(&out.stdout).trim().to_string())

@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 
 use super::error::{GitError, GitResult};
 use super::types::GitCommandResult;
+use crate::platform::command;
 
 // Single-responsibility: cache resolved repo roots so we don't spawn a
 // `git rev-parse --show-toplevel` on every command. The same `path` value is
@@ -37,7 +37,7 @@ pub fn resolve_repo_root(path: &str) -> GitResult<PathBuf> {
         return Err(GitError::NotADirectory(path.to_string()));
     }
 
-    let output = Command::new("git")
+    let output = command("git")
         .args(["rev-parse", "--show-toplevel"])
         .current_dir(&candidate)
         .output()
@@ -67,7 +67,7 @@ pub fn run_git(cwd: &Path, args: &[&str]) -> GitResult<GitCommandResult> {
         return Err(GitError::PathNotFound(cwd.display().to_string()));
     }
 
-    let output = Command::new("git")
+    let output = command("git")
         .args(args)
         .current_dir(cwd)
         .output()
