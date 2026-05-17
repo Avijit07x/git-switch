@@ -1,24 +1,35 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { themeStore, type Theme } from "@/lib/theme-store";
+import { themeStore, type Accent, type Theme } from "@/lib/theme-store";
 
-// Single-responsibility: mirror theme state to <html class="dark|light"> and
-// persist user choice. Every useTheme() consumer subscribes to a shared
-// change event so they all flip together (toggle in the sidebar instantly
-// updates the xterm.js terminal, etc.).
+// Single-responsibility: mirror theme + accent state to the <html> element
+// and persist user choice. Mode lives in `<html class="dark|light">`, accent
+// lives in `<html data-accent="...">`. Every useTheme() consumer subscribes
+// to a shared change event so they all flip together (sidebar toggle,
+// settings dialog, xterm.js terminal, etc.).
 export function useTheme() {
   const [theme, setThemeState] = useState<Theme>(() => themeStore.load());
+  const [accent, setAccentState] = useState<Accent>(() => themeStore.loadAccent());
 
-  // Keep <html> class in sync with our local state.
+  // Mode -> <html class>
   useEffect(() => {
     const root = document.documentElement;
     root.classList.remove("light", "dark");
     root.classList.add(theme);
   }, [theme]);
 
+  // Accent -> <html data-accent>. CSS selectors `[data-accent="orange"]` etc.
+  // override the primary/ring tokens defined in `index.css`.
+  useEffect(() => {
+    document.documentElement.setAttribute("data-accent", accent);
+  }, [accent]);
+
   // Cross-component sync: when any other useTheme() saves, refresh ours.
   useEffect(() => {
-    return themeStore.subscribe(() => setThemeState(themeStore.load()));
+    return themeStore.subscribe(() => {
+      setThemeState(themeStore.load());
+      setAccentState(themeStore.loadAccent());
+    });
   }, []);
 
   const setTheme = useCallback((next: Theme) => {
@@ -32,5 +43,10 @@ export function useTheme() {
     setThemeState(next);
   }, []);
 
-  return { theme, setTheme, toggle } as const;
+  const setAccent = useCallback((next: Accent) => {
+    themeStore.saveAccent(next);
+    setAccentState(next);
+  }, []);
+
+  return { theme, accent, setTheme, setAccent, toggle } as const;
 }

@@ -24,6 +24,7 @@ import {
 } from "@/hooks/use-git-operations";
 import { useFileWatcher } from "@/hooks/use-file-watcher";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { useTrayStatus } from "@/hooks/use-tray-status";
 import { useWindowFocus } from "@/hooks/use-window-focus";
 import { gitClient } from "@/lib/git-client";
 import { shortenPath } from "@/lib/format";
@@ -168,6 +169,16 @@ function DashboardInner({
   // Drives the "Publish branch" button — true once the current branch has a
   // configured upstream (i.e. has been published at least once).
   const hasUpstream = !!aheadBehindQuery.data?.upstream;
+
+  // Push the active repo's status to the menu-bar tray label so it's visible
+  // even when the window is hidden.
+  useTrayStatus({
+    repository,
+    branch: current,
+    ahead,
+    behind,
+    changes: uncommitted,
+  });
   // Show the Undo button only when the latest commit is safely local:
   // either the branch has no upstream at all (brand-new branch) or there
   // are unpushed commits ahead of upstream. We never expose this for commits

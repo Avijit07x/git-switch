@@ -89,7 +89,7 @@ export function RepositoryPicker({ hasPath, onAdd }: RepositoryPickerProps) {
 
   const label = progress
     ? `Adding ${progress.done}/${progress.total}…`
-    : "Add repositories";
+    : "Add local repository";
 
   return (
     <div className="space-y-2">
@@ -109,9 +109,9 @@ export function RepositoryPicker({ hasPath, onAdd }: RepositoryPickerProps) {
       </Button>
 
       <p className="px-1 text-[10px] text-muted-foreground">
-        Tip:{" "}
-        <kbd className="rounded bg-muted px-1 font-mono">⌘</kbd> +click to
-        select multiple folders in the dialog.
+        Pick a folder on your Mac.{" "}
+        <kbd className="rounded bg-muted px-1 font-mono">⌘</kbd>+click in the
+        dialog to add several at once.
       </p>
 
       {errors.length > 0 && (

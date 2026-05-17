@@ -4,6 +4,7 @@ import { Download, FolderTree, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { useAppVersion } from "@/hooks/use-app-version";
 import { useQuickStatusBatch } from "@/hooks/use-git-operations";
 import { cn } from "@/lib/utils";
 import type { ProjectGroup, Repository } from "@/lib/types";
@@ -59,6 +60,7 @@ export function RepositorySidebar({
     useState<ProjectGroup | null>(null);
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
+  const version = useAppVersion();
 
   // One IPC fetches quick status for every repo and primes each row's
   // per-repo cache — rows themselves still call `useQuickStatus` and just
@@ -83,6 +85,14 @@ export function RepositorySidebar({
       >
         <Logo size={18} className="text-foreground" />
         <span className="tracking-tight">Git Switch</span>
+        {version ? (
+          <span
+            className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[9px] font-medium uppercase tracking-wider text-muted-foreground"
+            title={`Git Switch v${version}`}
+          >
+            v{version}
+          </span>
+        ) : null}
         <div className="ml-auto flex items-center gap-1">
           <IconHint label="Clone repository" side="bottom">
             <Button

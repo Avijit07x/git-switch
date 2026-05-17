@@ -49,6 +49,72 @@
   --ring: oklch(0.556 0 0);
 }
 
+/* ── Accent presets ─────────────────────────────────────────────────────
+   Each accent overrides `--primary` (button + active-state surface),
+   `--primary-foreground` (text on top of primary), and `--ring` (focus
+   outline). Everything else stays on the neutral palette so the app
+   doesn't suddenly turn into a candy store; the accent is a single,
+   coherent brand splash applied to high-emphasis affordances.
+   White text on a saturated background is used in both modes — pure
+   lightness contrast (≥4.5:1 WCAG AA) without the perceptual fight of
+   slate-on-orange. The accent lightness is tuned per mode so white text
+   stays readable. */
+
+:root[data-accent="orange"] {
+  --primary: oklch(0.65 0.2 45);
+  --primary-foreground: oklch(1 0 0);
+  --ring: oklch(0.65 0.2 45 / 0.5);
+}
+.dark[data-accent="orange"] {
+  --primary: oklch(0.68 0.2 45);
+  --primary-foreground: oklch(1 0 0);
+  --ring: oklch(0.68 0.2 45 / 0.5);
+}
+
+:root[data-accent="blue"] {
+  --primary: oklch(0.55 0.22 260);
+  --primary-foreground: oklch(1 0 0);
+  --ring: oklch(0.55 0.22 260 / 0.5);
+}
+.dark[data-accent="blue"] {
+  --primary: oklch(0.62 0.2 260);
+  --primary-foreground: oklch(1 0 0);
+  --ring: oklch(0.62 0.2 260 / 0.5);
+}
+
+:root[data-accent="green"] {
+  --primary: oklch(0.55 0.18 155);
+  --primary-foreground: oklch(1 0 0);
+  --ring: oklch(0.55 0.18 155 / 0.5);
+}
+.dark[data-accent="green"] {
+  --primary: oklch(0.6 0.18 155);
+  --primary-foreground: oklch(1 0 0);
+  --ring: oklch(0.6 0.18 155 / 0.5);
+}
+
+:root[data-accent="rose"] {
+  --primary: oklch(0.58 0.22 20);
+  --primary-foreground: oklch(1 0 0);
+  --ring: oklch(0.58 0.22 20 / 0.5);
+}
+.dark[data-accent="rose"] {
+  --primary: oklch(0.62 0.22 20);
+  --primary-foreground: oklch(1 0 0);
+  --ring: oklch(0.62 0.22 20 / 0.5);
+}
+
+:root[data-accent="violet"] {
+  --primary: oklch(0.55 0.22 295);
+  --primary-foreground: oklch(1 0 0);
+  --ring: oklch(0.55 0.22 295 / 0.5);
+}
+.dark[data-accent="violet"] {
+  --primary: oklch(0.62 0.22 295);
+  --primary-foreground: oklch(1 0 0);
+  --ring: oklch(0.62 0.22 295 / 0.5);
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

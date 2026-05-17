@@ -1,9 +1,14 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from "@tauri-apps/plugin-notification";
 
 import { gitClient } from "@/lib/git-client";
 import { useIsAppReady } from "@/stores/use-app-ready-store";
-import type { Repository } from "@/lib/types";
+import type { QuickStatus, Repository } from "@/lib/types";
 
 // Run a silent `git fetch` per repo on mount + whenever the window regains
 // focus (debounced). Without this, the sidebar's "behind" badge is a lie —
@@ -12,15 +17,16 @@ import type { Repository } from "@/lib/types";
 //
 // Concurrency is intentionally bounded: a thundering herd of N parallel
 // `git fetch` calls (one per repo) saturates the blocking pool and starves
-// every other IPC, including the sidebar's `quick_status` reads. We rate-limit
-// by *time* per repo (COOLDOWN_MS) AND by max in-flight requests.
+// every other IPC, including the sidebar's `quick_status` reads.
+//
+// As a side benefit we use the before/after `quick_status` to detect "a
+// teammate's commit just landed" and fire a native macOS notification.
+// The first fetch on app launch is silent (no baseline to diff against) —
+// subsequent fetches that grow `behind` notify per repo.
 
 const FOCUS_COOLDOWN_MS = 60_000;
 const MAX_CONCURRENT_FETCHES = 5;
 
-// Single-responsibility: walk `items` with at most `limit` in flight at once.
-// Each task runs `worker(item)`; failures are swallowed (offline/no remote is
-// not an error path for a background fetch).
 async function withConcurrency<T>(
   items: readonly T[],
   limit: number,
@@ -34,9 +40,9 @@ async function withConcurrency<T>(
       while (cursor < items.length) {
         const index = cursor++;
         try {
-          await worker(items[index]);
+          await worker(items[index]!);
         } catch {
-          /* swallow — caller decides whether to log */
+          /* swallow */
         }
       }
     },
@@ -44,18 +50,41 @@ async function withConcurrency<T>(
   await Promise.all(runners);
 }
 
+// Ensure we've asked the OS for notification permission exactly once per
+// session. macOS will only prompt the user once anyway, but isPermissionGranted
+// is cheap and avoids the no-op request.
+async function ensureNotificationPermission(): Promise<boolean> {
+  try {
+    if (await isPermissionGranted()) return true;
+    const requested = await requestPermission();
+    return requested === "granted";
+  } catch {
+    return false;
+  }
+}
+
+interface PrevState {
+  behind: number;
+  ahead: number;
+  branch: string | null;
+}
+
 export function useBackgroundFetch(repositories: Repository[]): void {
   const queryClient = useQueryClient();
   const ready = useIsAppReady();
   const lastRunRef = useRef<number>(0);
-  // Keep a stable identity for the list so the effect only re-runs when the
-  // *set* of repos changes, not on every parent re-render.
+  // Remember each repo's last seen { behind, ahead, branch } across fetch
+  // cycles so the *change* drives the notification, not the absolute count.
+  const lastStateRef = useRef<Map<string, PrevState>>(new Map());
+  // First fetch is silent so users don't get flooded the moment the app boots.
+  const armedRef = useRef(false);
   const idsKey = repositories.map((r) => r.id).join("|");
 
   useEffect(() => {
     if (!ready || repositories.length === 0) return;
 
     let cancelled = false;
+    void ensureNotificationPermission();
 
     const fetchAll = () => {
       const now = Date.now();
@@ -65,20 +94,51 @@ export function useBackgroundFetch(repositories: Repository[]): void {
       void withConcurrency(repositories, MAX_CONCURRENT_FETCHES, async (repo) => {
         if (cancelled) return;
         try {
+          // Capture pre-fetch behind so we can detect new commits below.
+          let before: QuickStatus | undefined;
+          try {
+            before = await gitClient.quickStatus(repo.path);
+          } catch {
+            /* fresh repo / corrupted .git — skip */
+          }
+
           await gitClient.fetchRemote(repo.path);
           if (cancelled) return;
+
+          // Invalidate every per-repo query so the sidebar/dashboard
+          // re-render against fresh refs.
           queryClient.invalidateQueries({
             predicate: (q) => q.queryKey.length >= 2 && q.queryKey[1] === repo.id,
           });
+
+          // Notify on "new commits arrived" — i.e. behind grew, on the same
+          // branch we were tracking. Skip if this is the first cycle (armed
+          // is false) so launch doesn't fire a wall of notifications.
+          let after: QuickStatus | undefined;
+          try {
+            after = await gitClient.quickStatus(repo.path);
+          } catch {
+            /* ignore */
+          }
+          maybeNotifyNewCommits(repo, before, after, armedRef.current);
+          if (after) {
+            lastStateRef.current.set(repo.id, {
+              behind: after.behind,
+              ahead: after.ahead,
+              branch: after.currentBranch,
+            });
+          }
         } catch {
-          /* offline / no remote / auth fail — sidebar just stays stale */
+          /* offline / no remote / auth fail — silent */
         }
       });
+
+      // Arm on the *next* tick so the very first cycle never notifies.
+      setTimeout(() => {
+        armedRef.current = true;
+      }, 0);
     };
 
-    // Defer the initial run so it doesn't compete with the first paint.
-    // Using `requestIdleCallback` when available, falling back to a short
-    // timeout — either way we let the UI settle before firing the first wave.
     const idle = (cb: () => void): number => {
       const w = window as Window &
         typeof globalThis & {
@@ -102,7 +162,34 @@ export function useBackgroundFetch(repositories: Repository[]): void {
       if (w.cancelIdleCallback) w.cancelIdleCallback(handle);
       else window.clearTimeout(handle);
     };
-    // idsKey changes only when the actual set of repos changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, idsKey, queryClient]);
+}
+
+// Fire a notification when `behind` grew on the same branch. Same-branch
+// guard prevents spurious "10 new commits" alerts immediately after the user
+// switches to a stale branch.
+function maybeNotifyNewCommits(
+  repo: Repository,
+  before: QuickStatus | undefined,
+  after: QuickStatus | undefined,
+  armed: boolean,
+): void {
+  if (!armed || !before || !after) return;
+  if (before.currentBranch !== after.currentBranch) return;
+  const grew = after.behind > before.behind;
+  if (!grew) return;
+  const newCommits = after.behind - before.behind;
+  const branch = after.currentBranch ?? "branch";
+  void (async () => {
+    try {
+      if (!(await isPermissionGranted())) return;
+      sendNotification({
+        title: `${repo.name} · ${newCommits} new commit${newCommits === 1 ? "" : "s"}`,
+        body: `${branch} is now ${after.behind} behind upstream. Pull when ready.`,
+      });
+    } catch {
+      /* permission denied or plugin offline — silent */
+    }
+  })();
 }

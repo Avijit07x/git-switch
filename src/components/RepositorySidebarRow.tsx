@@ -3,6 +3,7 @@ import { Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useQuickStatus } from "@/hooks/use-git-operations";
+import { useRepoRunState } from "@/hooks/use-repo-run-state";
 import { cn } from "@/lib/utils";
 import type { Repository } from "@/lib/types";
 
@@ -16,7 +17,8 @@ interface RepositorySidebarRowProps {
 }
 
 // Single-responsibility: render one repository row in the sidebar. The row's
-// background tint encodes status at a glance:
+// background tint encodes git status at a glance, and a green "live" pill
+// surfaces when any of the repo's run targets is currently running.
 //   - behind  → rose    (upstream moved, you should pull — most urgent)
 //   - changes → amber   (uncommitted work)
 //   - ahead   → emerald (commits to push)
@@ -50,6 +52,7 @@ function RepositorySidebarRowImpl({
   onRequestRemove,
 }: RepositorySidebarRowProps) {
   const { data } = useQuickStatus(repository);
+  const run = useRepoRunState(repository);
   const changes = data?.changes ?? 0;
   const ahead = data?.ahead ?? 0;
   const behind = data?.behind ?? 0;
@@ -77,9 +80,29 @@ function RepositorySidebarRowImpl({
       title={repository.path}
     >
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold leading-tight">
-          {repository.name}
-        </p>
+        <div className="flex items-center gap-1.5">
+          <p className="truncate text-sm font-semibold leading-tight">
+            {repository.name}
+          </p>
+          {run.runningCount > 0 ? (
+            <IconHint
+              label={`${run.runningCount} target${run.runningCount === 1 ? "" : "s"} running${run.port ? ` · port ${run.port}` : ""}`}
+              side="top"
+            >
+              <span
+                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/15 px-1.5 py-px text-[9px] font-semibold leading-none text-emerald-700 ring-1 ring-inset ring-emerald-500/30 dark:text-emerald-300"
+                aria-label={`${run.runningCount} running`}
+              >
+                <span className="relative inline-flex size-1.5">
+                  <span className="absolute inset-0 animate-ping rounded-full bg-emerald-500 opacity-70" />
+                  <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
+                </span>
+                {run.runningCount > 1 ? `${run.runningCount}` : "live"}
+                {run.port ? ` :${run.port}` : ""}
+              </span>
+            </IconHint>
+          ) : null}
+        </div>
         <p className="truncate text-[11px] leading-tight text-muted-foreground">
           {loaded ? (branch ?? "(detached)") : " "}
         </p>

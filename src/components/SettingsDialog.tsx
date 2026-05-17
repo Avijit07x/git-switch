@@ -6,6 +6,7 @@ import {
   ExternalLink,
   KeyRound,
   Loader2,
+  Palette,
   Plus,
   Sparkles,
   Trash2,
@@ -33,6 +34,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AccentPicker } from "@/components/AccentPicker";
 import { IconHint } from "@/components/IconHint";
 import { useSettings } from "@/hooks/use-settings";
 import { listGeminiModels, type ListedModel } from "@/lib/gemini";
@@ -178,6 +180,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 Profiles
               </TabsTrigger>
               <TabsTrigger
+                value="appearance"
+                className="gap-1.5 rounded-none border-b-2 border-transparent bg-transparent px-3 pb-2 pt-1 text-muted-foreground shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
+              >
+                <Palette className="size-3.5" />
+                Appearance
+              </TabsTrigger>
+              <TabsTrigger
                 value="ai"
                 className="gap-1.5 rounded-none border-b-2 border-transparent bg-transparent px-3 pb-2 pt-1 text-muted-foreground shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
               >
@@ -200,6 +209,19 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   onSetActive={setDraftActiveId}
                   onPickKey={pickKey}
                 />
+              </ScrollArea>
+            </TabsContent>
+
+            <TabsContent value="appearance" className="m-0 h-full">
+              <ScrollArea className="h-full">
+                <div className="space-y-4 px-6 py-5">
+                  <SectionIntro
+                    icon={<Palette className="size-3.5" />}
+                    title="Theme"
+                    body="Switch between light and dark, and pick an accent color for primary buttons and focus states. Changes apply instantly and persist across launches."
+                  />
+                  <AccentPicker />
+                </div>
               </ScrollArea>
             </TabsContent>
 

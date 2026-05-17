@@ -10,19 +10,15 @@ permissions:
   contents: write
 
 jobs:
+  # ── macOS universal build ─────────────────────────────────────────────
   build-macos:
     name: Build macOS (universal)
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # full history for git-cliff to walk commits
+          fetch-depth: 0   # full history for git-cliff
 
-      # Generate release notes from Conventional-Commits since the previous
-      # tag. orhun/git-cliff-action is a Docker container action and only
-      # runs on Linux runners; we're on macos-14, so install the native
-      # binary via Homebrew instead. The brew bottle is cached on the
-      # runner image so this step is ~2s on warm cache.
       - name: Install git-cliff
         if: startsWith(github.ref, 'refs/tags/')
         run: brew install git-cliff
@@ -37,7 +33,7 @@ jobs:
           node-version: 20
           cache: yarn
 
-      - name: Setup Rust + add both macOS targets
+      - name: Setup Rust + macOS targets
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
@@ -51,50 +47,103 @@ jobs:
       - name: Install JS deps
         run: yarn install --frozen-lockfile
 
-      # Build a universal binary so a single .dmg works on both Apple Silicon
-      # and Intel Macs. Tauri's CLI orchestrates the dual build + lipo step.
-      # No Apple env vars passed → Tauri falls back to ad-hoc signing
-      # (the `-` signing identity in tauri.conf.json) and skips notarization.
-      # First-launch users will need to right-click → Open once; that's the
-      # only cost. To enable real notarized signing later, set APPLE_* secrets
-      # in repo settings and reintroduce them here.
       - name: Build Tauri (universal)
         run: yarn tauri build --target universal-apple-darwin
 
       - name: Collect artifacts
-        id: collect
         run: |
           set -euo pipefail
           BUNDLE_DIR="src-tauri/target/universal-apple-darwin/release/bundle"
           mkdir -p dist-release
-          # Copy whatever artifacts exist — names include the version.
           find "$BUNDLE_DIR/dmg" -name '*.dmg' -exec cp {} dist-release/ \; || true
-          # Tarball the .app for users who'd rather not mount a DMG.
           APP=$(find "$BUNDLE_DIR/macos" -maxdepth 1 -name '*.app' | head -n1)
           if [ -n "$APP" ]; then
             tar -C "$BUNDLE_DIR/macos" -czf "dist-release/$(basename "$APP" .app)-${GITHUB_REF_NAME}.app.tar.gz" "$(basename "$APP")"
           fi
           ls -lah dist-release/
-          echo "artifacts_dir=dist-release" >> "$GITHUB_OUTPUT"
 
-      - name: Upload to GitHub Release
+      - name: Upload macOS artifacts to Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           draft: false
-          # body_path overrides GitHub's auto-generated changelog with the
-          # cliff-formatted notes from the step above. Fallback to the GH
-          # auto-generator if the file is missing for any reason.
           body_path: RELEASE_NOTES.md
           generate_release_notes: false
           files: |
             dist-release/*.dmg
             dist-release/*.tar.gz
 
-      # Fallback when triggered manually (no tag): keep artifacts on the run.
-      - name: Upload workflow artifacts
+      - name: Upload workflow artifacts (no tag)
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         uses: actions/upload-artifact@v4
         with:
           name: git-switch-macos-universal
+          path: dist-release/*
+
+  # ── Linux x86_64 build ────────────────────────────────────────────────
+  build-linux:
+    name: Build Linux (x86_64)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: release-linux
+
+      # Tauri needs WebKitGTK + GTK + libayatana-appindicator (for the tray)
+      # plus librsvg2 (for the bundle icon step) and patchelf (for AppImage
+      # path fixups). These are the canonical Tauri 2 Linux build deps.
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install JS deps
+        run: yarn install --frozen-lockfile
+
+      - name: Build Tauri (.deb + AppImage)
+        run: yarn tauri build
+
+      - name: Collect artifacts
+        run: |
+          set -euo pipefail
+          BUNDLE_DIR="src-tauri/target/release/bundle"
+          mkdir -p dist-release
+          find "$BUNDLE_DIR/deb" -name '*.deb' -exec cp {} dist-release/ \; || true
+          find "$BUNDLE_DIR/appimage" -name '*.AppImage' -exec cp {} dist-release/ \; || true
+          find "$BUNDLE_DIR/rpm" -name '*.rpm' -exec cp {} dist-release/ \; || true
+          ls -lah dist-release/
+
+      - name: Upload Linux artifacts to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          files: |
+            dist-release/*.deb
+            dist-release/*.AppImage
+            dist-release/*.rpm
+
+      - name: Upload workflow artifacts (no tag)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: git-switch-linux-x86_64
           path: dist-release/*

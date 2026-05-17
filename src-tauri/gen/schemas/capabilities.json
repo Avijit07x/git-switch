@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Default capability for Git Switch","local":true,"windows":["main"],"permissions":["core:default","dialog:default"]}}
+{"default":{"identifier":"default","description":"Default capability for Git Switch","local":true,"windows":["main"],"permissions":["core:default","dialog:default","notification:default"]}}

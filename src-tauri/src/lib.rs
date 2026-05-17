@@ -2,6 +2,7 @@ mod fs;
 mod git;
 mod process;
 mod repository;
+mod tray;
 
 use fs::commands::*;
 use fs::FsWatcherState;
@@ -9,9 +10,8 @@ use git::commands::*;
 use process::commands::*;
 use process::ProcessState;
 use tauri::{Manager, RunEvent};
+use tray::{update_tray_status, TrayStatus};
 
-#[cfg(target_os = "macos")]
-use tauri::utils::{config::WindowEffectsConfig, WindowEffect, WindowEffectState};
 
 /// Smoke-test the host environment so the app can warn the user *once* on
 /// launch instead of failing every command silently. Pushed to the blocking
@@ -56,33 +56,18 @@ fn open_external(target: String) -> Result<(), String> {
     Ok(())
 }
 
-// Single-responsibility: apply NSVisualEffectView ("vibrancy") to the main
-// window so the title bar and side panels blend with the desktop wallpaper,
-// matching native macOS apps. The transparent flag in `tauri.conf.json` +
-// the CSS variable token system on the frontend handle the rest.
-#[cfg(target_os = "macos")]
-fn apply_vibrancy(app: &tauri::App) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.set_effects(WindowEffectsConfig {
-            effects: vec![WindowEffect::HudWindow, WindowEffect::Sidebar],
-            state: Some(WindowEffectState::Active),
-            radius: None,
-            color: None,
-        });
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn apply_vibrancy(_app: &tauri::App) {}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .manage(ProcessState::default())
         .manage(FsWatcherState::default())
+        .manage(TrayStatus::default())
         .setup(|app| {
-            apply_vibrancy(app);
+            if let Err(err) = tray::init(app.handle()) {
+                eprintln!("[git-switch] tray init failed: {err}");
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -121,6 +106,7 @@ pub fn run() {
             check_git,
             watch_repository,
             unwatch_repository,
+            update_tray_status,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

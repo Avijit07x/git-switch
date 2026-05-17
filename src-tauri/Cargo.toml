@@ -1,6 +1,6 @@
 [package]
 name = "git-switch"
-version = "0.3.0"
+version = "0.4.0"
 description = "Local Git branch manager for macOS"
 authors = ["Avijit Dey"]
 edition = "2021"
@@ -16,8 +16,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["macos-private-api"] }
+tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 # Only `rt-multi-thread` is needed for our two `tokio::task::spawn_blocking`
@@ -26,7 +27,17 @@ thiserror = "2"
 # features. Tauri itself pulls in any tokio features it needs internally.
 tokio = { version = "1", features = ["rt-multi-thread"] }
 portable-pty = "0.9"
+
+# Filesystem watcher: backend differs per OS. macOS gets FSEvents, Linux
+# gets inotify (notify's default on Linux), Windows gets ReadDirectoryChangesW.
+[target.'cfg(target_os = "macos")'.dependencies]
 notify = { version = "7", default-features = false, features = ["macos_fsevent"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+notify = "7"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+notify = "7"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
