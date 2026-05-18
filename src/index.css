@@ -238,6 +238,17 @@
   body,
   #root {
     height: 100%;
+    width: 100%;
+    /* Lock the document to the viewport. Internal panels (sidebar list,
+       changed files, command output, dialogs, xterm) own their own
+       overflow-auto. Without this the whole app becomes pannable on
+       Windows / Linux — any descendant 1px wider than the viewport
+       (a flex child overshooting, a wide xterm row) creates a real
+       scrollbar at the body level and lets the user drag the entire
+       UI sideways. macOS WebKit hides it with overlay scrollbars; the
+       other platforms don't. */
+    overflow: hidden;
+    overscroll-behavior: none;
   }
 
   button {
@@ -254,6 +265,50 @@
   }
   input[type="number"] {
     -moz-appearance: textfield;
+  }
+
+  /* ── Scrollbars ─────────────────────────────────────────────────────
+     Replace the OS-default scrollbar everywhere. macOS with "Show
+     scroll bars: Always", Linux WebKitGTK, and Windows all render
+     chunky native scrollbars on every `overflow-auto` container even
+     when content fits — those read as visual noise. Custom overlay
+     style: invisible track, slim thumb on hover only, never reserves
+     gutter space. xterm.js has its own scrollbar so we exclude
+     `.xterm-viewport`. */
+
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 8px;
+    transition: background 120ms ease-out;
+  }
+
+  *:hover::-webkit-scrollbar-thumb {
+    background: color-mix(in oklch, var(--foreground) 22%, transparent);
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklch, var(--foreground) 40%, transparent);
+  }
+
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* xterm.js renders its own scroll affordance — let it through. */
+  .xterm-viewport::-webkit-scrollbar {
+    width: 10px;
+  }
+  .xterm-viewport::-webkit-scrollbar-thumb {
+    background: color-mix(in oklch, var(--foreground) 30%, transparent);
   }
 }
 

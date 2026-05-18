@@ -391,6 +391,7 @@ pub async fn start(
     {
         let app = app.clone();
         let exit_evt = exit_event(&repo_id);
+        let data_evt_for_exit = data_evt.clone();
         let repo_id_for_state = repo_id.clone();
         tokio::task::spawn_blocking(move || {
             let status = child.wait();
@@ -404,6 +405,26 @@ pub async fn start(
             if let Some(state) = app.try_state::<ProcessState>() {
                 state.inner.lock().unwrap().remove(&repo_id_for_state);
             }
+
+            // Synthetic banner so the user always sees the exit code in the
+            // xterm, even when the reader missed early output (common on
+            // Windows ConPTY when the child exits in <50ms). Coloured red
+            // on failure, dim on success.
+            let banner = if success {
+                "\r\n\x1b[2m─ exited (code 0) ─\x1b[0m\r\n".to_string()
+            } else {
+                format!(
+                    "\r\n\x1b[31m─ exited with code {exit_code} ─\x1b[0m\r\n"
+                )
+            };
+            let _ = app.emit(
+                &data_evt_for_exit,
+                ProcessData {
+                    repo_id: repo_id_for_state.clone(),
+                    data: banner,
+                },
+            );
+
             let _ = app.emit(
                 &exit_evt,
                 ProcessExit {
