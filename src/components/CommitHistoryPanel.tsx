@@ -3,10 +3,13 @@ import { Clock } from "lucide-react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useCommitHistory } from "@/hooks/use-git-operations";
+import { cn } from "@/lib/utils";
 import type { CommitInfo, Repository } from "@/lib/types";
 
 interface CommitHistoryPanelProps {
   repository: Repository;
+  /** When provided, rows become clickable (used to open the commit's diff). */
+  onSelectCommit?: (commit: CommitInfo) => void;
 }
 
 // Single-responsibility: read-only `git log` viewer for the current branch.
@@ -14,7 +17,10 @@ interface CommitHistoryPanelProps {
 // timestamp. No interaction yet — clicking a commit could open a diff
 // against HEAD later, but the read-only flow is the bigger UX win to ship
 // first.
-export function CommitHistoryPanel({ repository }: CommitHistoryPanelProps) {
+export function CommitHistoryPanel({
+  repository,
+  onSelectCommit,
+}: CommitHistoryPanelProps) {
   const { data, isLoading, error } = useCommitHistory(repository);
 
   return (
@@ -40,7 +46,11 @@ export function CommitHistoryPanel({ repository }: CommitHistoryPanelProps) {
         ) : (
           <ul className="divide-y divide-border">
             {data.map((commit) => (
-              <CommitRow key={commit.hash} commit={commit} />
+              <CommitRow
+                key={commit.hash}
+                commit={commit}
+                onSelect={onSelectCommit}
+              />
             ))}
           </ul>
         )}
@@ -51,12 +61,26 @@ export function CommitHistoryPanel({ repository }: CommitHistoryPanelProps) {
 
 // Single-responsibility: render one commit row. Avatar is a derived initial
 // circle so the layout doesn't depend on Gravatar / network.
-function CommitRow({ commit }: { commit: CommitInfo }) {
+function CommitRow({
+  commit,
+  onSelect,
+}: {
+  commit: CommitInfo;
+  onSelect?: (commit: CommitInfo) => void;
+}) {
   const initials = useMemo(() => deriveInitials(commit.author), [commit.author]);
   const when = useMemo(() => relativeTime(commit.timestamp), [commit.timestamp]);
 
   return (
-    <li className="group flex items-center gap-2.5 px-3 py-2 hover:bg-accent/50">
+    <li
+      className={cn(
+        "group flex items-center gap-2.5 px-3 py-2 hover:bg-accent/50",
+        onSelect && "cursor-pointer",
+      )}
+      onClick={onSelect ? () => onSelect(commit) : undefined}
+      role={onSelect ? "button" : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+    >
       <div
         aria-hidden
         className="flex size-6 shrink-0 items-center justify-center rounded-full bg-foreground/10 text-[10px] font-semibold text-foreground"

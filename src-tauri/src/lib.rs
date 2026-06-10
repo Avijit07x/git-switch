@@ -3,6 +3,7 @@ mod git;
 mod platform;
 mod process;
 mod repository;
+mod scan;
 mod tray;
 
 use fs::commands::*;
@@ -10,6 +11,7 @@ use fs::FsWatcherState;
 use git::commands::*;
 use process::commands::*;
 use process::ProcessState;
+use scan::scan_directory;
 use tauri::{Manager, RunEvent};
 use tray::{update_tray_status, TrayStatus};
 
@@ -62,6 +64,8 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(ProcessState::default())
         .manage(FsWatcherState::default())
         .manage(TrayStatus::default())
@@ -73,7 +77,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             validate_repository,
+            init_repository,
             clone_repository,
+            scan_directory,
             get_branches,
             switch_branch,
             create_local_branch_from_remote,
@@ -96,6 +102,7 @@ pub fn run() {
             get_last_commit,
             get_commit_history,
             get_file_diff,
+            get_commit_diff,
             start_process,
             stop_process,
             is_process_running,

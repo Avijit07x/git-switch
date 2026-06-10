@@ -132,3 +132,78 @@ export async function generateCommitMessage(
   }
   return text.trim();
 }
+
+// Treat both "model doesn't exist" and "quota exhausted" as triggers to
+// auto-pick a different model. limit:0 means the key has no free quota for
+// that model at all — pick something more generous instead.
+function shouldFallbackModel(message: string): boolean {
+  return /not found|not supported|not available|unsupported model|quota|limit:\s*0|resource_exhausted|rate.?limit/i.test(
+    message,
+  );
+}
+
+// Prefer models with the widest free-tier availability so the auto-fallback
+// lands on one that actually works for first-time keys.
+const PREFERENCE_PATTERNS: RegExp[] = [
+  /^gemini-1\.5-flash-8b$/,
+  /^gemini-1\.5-flash$/,
+  /^gemini-1\.5-flash/,
+  /^gemini-1\.5-pro/,
+  /^gemini-2\.5-flash-lite/,
+  /^gemini-2\.0-flash-lite/,
+  /^gemini-2\.5-flash/,
+  /^gemini-2\.0-flash/,
+];
+
+function pickFallbackModel(
+  available: ListedModel[],
+  exclude: ReadonlySet<string>,
+): ListedModel | null {
+  const pool = available.filter((m) => !exclude.has(m.id));
+  if (pool.length === 0) return null;
+  for (const pattern of PREFERENCE_PATTERNS) {
+    const match = pool.find((m) => pattern.test(m.id));
+    if (match) return match;
+  }
+  return pool[0];
+}
+
+export interface GeneratedCommitMessage {
+  message: string;
+  /** Model that actually produced the message (may differ from preferred). */
+  model: string;
+}
+
+/** Generates a commit message, transparently retrying on the next-best model
+ *  when the preferred one is missing or out of quota. */
+export async function generateCommitMessageWithFallback(
+  apiKey: string,
+  preferredModel: string,
+  diff: string,
+  onModelSwitch?: (from: string, to: string) => void,
+): Promise<GeneratedCommitMessage> {
+  const tried = new Set<string>();
+  let currentModel = preferredModel;
+  let available: ListedModel[] | null = null;
+
+  while (true) {
+    tried.add(currentModel);
+    try {
+      const message = await generateCommitMessage(apiKey, currentModel, diff);
+      return { message, model: currentModel };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!shouldFallbackModel(msg)) throw err;
+
+      available ??= await listGeminiModels(apiKey);
+      const next = pickFallbackModel(available, tried);
+      if (!next) {
+        throw new Error(
+          `No working Gemini model for this key. Last error: ${msg}`,
+        );
+      }
+      onModelSwitch?.(currentModel, next.id);
+      currentModel = next.id;
+    }
+  }
+}

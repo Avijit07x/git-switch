@@ -8,19 +8,21 @@ import {
 } from "react";
 import { toast } from "sonner";
 
+import { ActivityBar } from "@/components/ActivityBar";
+import { Logo } from "@/components/Logo";
 import { RepositorySidebar } from "@/components/RepositorySidebar";
+import { StatusBar } from "@/components/StatusBar";
 import { Toaster } from "@/components/ui/sonner";
 import { useBackgroundFetch } from "@/hooks/use-background-fetch";
 import { useFileDrop } from "@/hooks/use-file-drop";
 import { gitClient } from "@/lib/git-client";
 import { repositoryFromPath } from "@/lib/repository-from-path";
 import { checkGit } from "@/lib/system";
-import type { GitCommandResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useMarkAppReady } from "@/hooks/use-mark-app-ready";
-import { useCommandLogStore } from "@/stores/use-command-log-store";
 import { useGroupStore } from "@/stores/use-group-store";
 import { useRepoStore } from "@/stores/use-repo-store";
+import { useUiStore } from "@/stores/use-ui-store";
 
 // Module-level dynamic imports — assigning them to variables guarantees we
 // only ever fetch each chunk once. The promises resolve to the modules,
@@ -56,10 +58,9 @@ export default function App() {
   const updateGroup = useGroupStore((s) => s.updateGroup);
   const removeGroup = useGroupStore((s) => s.removeGroup);
 
-  const entries = useCommandLogStore((s) => s.entries);
-  const startEntry = useCommandLogStore((s) => s.startEntry);
-  const completeEntry = useCommandLogStore((s) => s.completeEntry);
-  const clearEntries = useCommandLogStore((s) => s.clearEntries);
+  const sidebarView = useUiStore((s) => s.sidebarView);
+  const sidebarOpen = useUiStore((s) => s.sidebarOpen);
+  const selectSidebarView = useUiStore((s) => s.selectSidebarView);
 
   // Gate the entire heavy-query layer behind an idle frame so the window
   // chrome (fullscreen, drag, traffic lights) stays responsive on launch.
@@ -143,21 +144,6 @@ export default function App() {
     [selectGroup],
   );
 
-  const handleLogStart = useCallback(
-    (label: string): string =>
-      selected ? startEntry(selected.id, label) : "",
-    [selected, startEntry],
-  );
-
-  const handleLogComplete = useCallback(
-    (id: string, result: GitCommandResult) => completeEntry(id, result),
-    [completeEntry],
-  );
-
-  const handleClearLog = useCallback(() => {
-    if (selected) clearEntries(selected.id);
-  }, [selected, clearEntries]);
-
   const handleDrop = useCallback(
     async (paths: string[]) => {
       for (const path of paths) {
@@ -198,49 +184,61 @@ export default function App() {
   const { isDragOver } = useFileDrop({ onDrop: handleDrop });
 
   return (
-    <div className="relative flex h-full w-full overflow-hidden">
-      <RepositorySidebar
-        repositories={repositories}
-        groups={groups}
-        selectedRepoId={selectedRepoId}
-        selectedGroupId={selectedGroupId}
-        onSelectRepo={handleSelectRepo}
-        onSelectGroup={handleSelectGroup}
-        onRemove={removeRepository}
-        onAdd={addRepository}
-        hasPath={hasPath}
-        onCreateGroup={handleCreateGroup}
-        onDeleteGroup={removeGroup}
+    <div className="flex h-full w-full flex-col overflow-hidden">
+      <div className="relative flex min-h-0 flex-1">
+        <ActivityBar
+          view={sidebarView}
+          sidebarOpen={sidebarOpen}
+          onSelectView={selectSidebarView}
+        />
+
+        {sidebarOpen ? (
+          <RepositorySidebar
+            view={sidebarView}
+            repositories={repositories}
+            groups={groups}
+            selectedRepoId={selectedRepoId}
+            selectedGroupId={selectedGroupId}
+            onSelectRepo={handleSelectRepo}
+            onSelectGroup={handleSelectGroup}
+            onRemove={removeRepository}
+            onAdd={addRepository}
+            hasPath={hasPath}
+            onCreateGroup={handleCreateGroup}
+            onDeleteGroup={removeGroup}
+          />
+        ) : null}
+
+        <Suspense fallback={null}>
+          {selectedGroup ? (
+            <GroupDashboard
+              key={selectedGroup.id}
+              group={selectedGroup}
+              repositories={selectedGroup.repositoryIds
+                .map((id) => repositories.find((r) => r.id === id))
+                .filter((r): r is NonNullable<typeof r> => Boolean(r))}
+              allRepositories={repositories}
+              onEdit={handleUpdateGroup}
+              onOpenRepo={handleSelectRepo}
+            />
+          ) : selected ? (
+            <RepositoryDashboard
+              key={selected.id}
+              repository={selected}
+              onUpdateRepository={updateRepository}
+            />
+          ) : (
+            <EmptyState />
+          )}
+        </Suspense>
+
+        <DragOverlay visible={isDragOver} />
+      </div>
+
+      <StatusBar
+        repository={selectedGroup ? null : selected}
+        group={selectedGroup}
       />
-
-      <Suspense fallback={null}>
-        {selectedGroup ? (
-          <GroupDashboard
-            key={selectedGroup.id}
-            group={selectedGroup}
-            repositories={selectedGroup.repositoryIds
-              .map((id) => repositories.find((r) => r.id === id))
-              .filter((r): r is NonNullable<typeof r> => Boolean(r))}
-            allRepositories={repositories}
-            onEdit={handleUpdateGroup}
-            onOpenRepo={handleSelectRepo}
-          />
-        ) : selected ? (
-          <RepositoryDashboard
-            key={selected.id}
-            repository={selected}
-            logEntries={entries}
-            onLogStart={handleLogStart}
-            onLogComplete={handleLogComplete}
-            onClearLog={handleClearLog}
-            onUpdateRepository={updateRepository}
-          />
-        ) : (
-          <EmptyState />
-        )}
-      </Suspense>
-
-      <DragOverlay visible={isDragOver} />
       <Toaster />
     </div>
   );
@@ -253,8 +251,13 @@ function EmptyState() {
       data-tauri-drag-region
     >
       <div className="max-w-sm text-center">
-        <h2 className="text-lg font-semibold">No repository selected</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <div className="surface-sheen mx-auto mb-5 flex size-14 items-center justify-center rounded-2xl border bg-card shadow-sm">
+          <Logo size={28} className="text-muted-foreground" />
+        </div>
+        <h2 className="text-lg font-semibold tracking-tight">
+          No repository selected
+        </h2>
+        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
           Add one or more local Git repositories using the sidebar, or drag a
           folder anywhere onto the window.
         </p>
@@ -268,11 +271,12 @@ function DragOverlay({ visible }: { visible: boolean }) {
     <div
       aria-hidden
       className={cn(
-        "pointer-events-none absolute inset-0 z-40 flex items-center justify-center border-2 border-dashed border-primary bg-primary/5 transition-opacity",
+        "pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-primary/5 backdrop-blur-[2px] transition-opacity",
         visible ? "opacity-100" : "opacity-0",
       )}
     >
-      <p className="rounded-md bg-background/90 px-4 py-2 text-sm font-medium shadow">
+      <div className="absolute inset-3 rounded-2xl border-2 border-dashed border-primary/60" />
+      <p className="surface-sheen rounded-full border bg-card px-5 py-2.5 text-sm font-medium shadow-lg">
         Drop folders to add as repositories
       </p>
     </div>

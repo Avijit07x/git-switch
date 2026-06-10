@@ -170,26 +170,17 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         </DialogHeader>
 
         <Tabs defaultValue="profiles" className="flex flex-col">
-          <div className="border-b px-6 pt-3">
-            <TabsList className="h-9 bg-transparent p-0">
-              <TabsTrigger
-                value="profiles"
-                className="gap-1.5 rounded-none border-b-2 border-transparent bg-transparent px-3 pb-2 pt-1 text-muted-foreground shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
-              >
+          <div className="border-b px-6 py-3">
+            <TabsList className="grid h-8 w-full grid-cols-3">
+              <TabsTrigger value="profiles" className="gap-1.5 text-xs">
                 <UserRound className="size-3.5" />
                 Profiles
               </TabsTrigger>
-              <TabsTrigger
-                value="appearance"
-                className="gap-1.5 rounded-none border-b-2 border-transparent bg-transparent px-3 pb-2 pt-1 text-muted-foreground shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
-              >
+              <TabsTrigger value="appearance" className="gap-1.5 text-xs">
                 <Palette className="size-3.5" />
                 Appearance
               </TabsTrigger>
-              <TabsTrigger
-                value="ai"
-                className="gap-1.5 rounded-none border-b-2 border-transparent bg-transparent px-3 pb-2 pt-1 text-muted-foreground shadow-none data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
-              >
+              <TabsTrigger value="ai" className="gap-1.5 text-xs">
                 <Sparkles className="size-3.5" />
                 AI
               </TabsTrigger>

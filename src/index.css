@@ -3,50 +3,61 @@
 
 @custom-variant dark (&:is(.dark *));
 
-:root {
-  --radius: 0.5rem;
+/* ── Premium neutral system ─────────────────────────────────────────────
+   Every neutral carries a whisper of cool blue (hue ~255–265, chroma
+   0.004–0.012) instead of dead gray. Light mode layers white cards over a
+   soft tinted canvas; dark mode is a rich blue-charcoal with cards one
+   elevation step up and the sidebar one step down, so depth reads from
+   color alone before shadows even land. */
 
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+:root {
+  --radius: 0.625rem;
+
+  --background: oklch(0.974 0.0035 255);
+  --foreground: oklch(0.185 0.012 260);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.185 0.012 260);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.185 0.012 260);
+  --primary: oklch(0.225 0.014 260);
+  --primary-foreground: oklch(0.985 0.002 255);
+  --secondary: oklch(0.945 0.005 255);
+  --secondary-foreground: oklch(0.24 0.012 260);
+  --muted: oklch(0.945 0.005 255);
+  --muted-foreground: oklch(0.5 0.014 258);
+  --accent: oklch(0.936 0.006 255);
+  --accent-foreground: oklch(0.21 0.012 260);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --border: oklch(0.906 0.006 255);
+  --input: oklch(0.88 0.007 255);
+  --ring: oklch(0.6 0.02 258);
+  --sidebar: oklch(0.957 0.0045 255);
+  --sidebar-border: oklch(0.898 0.006 255);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: oklch(0.165 0.009 265);
+  --foreground: oklch(0.955 0.004 255);
+  --card: oklch(0.21 0.01 265);
+  --card-foreground: oklch(0.955 0.004 255);
+  --popover: oklch(0.222 0.011 265);
+  --popover-foreground: oklch(0.955 0.004 255);
+  --primary: oklch(0.93 0.005 255);
+  --primary-foreground: oklch(0.205 0.012 265);
+  --secondary: oklch(0.268 0.011 265);
+  --secondary-foreground: oklch(0.955 0.004 255);
+  --muted: oklch(0.268 0.011 265);
+  --muted-foreground: oklch(0.712 0.012 258);
+  --accent: oklch(0.28 0.012 265);
+  --accent-foreground: oklch(0.955 0.004 255);
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 13%);
+  --ring: oklch(0.56 0.015 260);
+  --sidebar: oklch(0.142 0.008 265);
+  --sidebar-border: oklch(1 0 0 / 7%);
 }
 
 /* ── Accent presets ─────────────────────────────────────────────────────
@@ -135,11 +146,35 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-border: var(--sidebar-border);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  /* Soft layered elevation — a tight contact shadow plus a wide ambient
+     one, instead of Tailwind's single hard drop. */
+  --shadow-2xs: 0 1px 2px oklch(0.2 0.02 260 / 0.04);
+  --shadow-xs: 0 1px 2px oklch(0.2 0.02 260 / 0.05);
+  --shadow-sm:
+    0 1px 2px oklch(0.2 0.02 260 / 0.06),
+    0 2px 6px -1px oklch(0.2 0.02 260 / 0.05);
+  --shadow:
+    0 1px 3px oklch(0.2 0.02 260 / 0.07),
+    0 4px 10px -2px oklch(0.2 0.02 260 / 0.07);
+  --shadow-md:
+    0 2px 4px oklch(0.2 0.02 260 / 0.07),
+    0 8px 18px -4px oklch(0.2 0.02 260 / 0.1);
+  --shadow-lg:
+    0 4px 8px oklch(0.2 0.02 260 / 0.07),
+    0 16px 32px -8px oklch(0.2 0.02 260 / 0.14);
+  --shadow-xl:
+    0 6px 12px oklch(0.2 0.02 260 / 0.08),
+    0 24px 48px -12px oklch(0.2 0.02 260 / 0.2);
+  --shadow-2xl: 0 32px 64px -16px oklch(0.2 0.02 260 / 0.28);
 }
 
 @layer base {
@@ -309,6 +344,53 @@
   }
   .xterm-viewport::-webkit-scrollbar-thumb {
     background: color-mix(in oklch, var(--foreground) 30%, transparent);
+  }
+}
+
+@layer components {
+  /* Primary-action sheen: vertical gradient + 1px inner top highlight so
+     filled buttons read as physical, lit objects. Driven by --sheen so the
+     destructive variant can reuse it (`[--sheen:var(--destructive)]`).
+     Hover brightens via filter because a background-image beats any
+     hover:bg-* utility. */
+  .btn-sheen {
+    background-color: var(--sheen, var(--primary));
+    background-image: linear-gradient(
+      to bottom,
+      color-mix(in oklch, var(--sheen, var(--primary)) 88%, white),
+      var(--sheen, var(--primary)) 62%
+    );
+    box-shadow:
+      inset 0 1px 0 0 oklch(1 0 0 / 0.12),
+      0 1px 2px oklch(0.15 0.02 260 / 0.2);
+  }
+  .btn-sheen:hover {
+    filter: brightness(1.05);
+  }
+  .btn-sheen:active {
+    filter: brightness(0.97);
+  }
+
+  /* One-shot full rotation for refresh-style buttons — restart it by
+     remounting the icon (key bump). Counter-clockwise to match RefreshCcw. */
+  @keyframes spin-once {
+    to {
+      transform: rotate(-360deg);
+    }
+  }
+  .animate-spin-once {
+    animation: spin-once 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* Raised-surface wash: in dark mode, cards/dialogs/popovers catch a faint
+     light from above. Composes with shadows (it's a background-image, not a
+     box-shadow) so it never fights elevation utilities. */
+  .dark .surface-sheen {
+    background-image: linear-gradient(
+      to bottom,
+      oklch(1 0 0 / 0.035),
+      transparent 45%
+    );
   }
 }
 

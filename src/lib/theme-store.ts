@@ -24,8 +24,6 @@ export const ACCENTS: ReadonlyArray<Accent> = [
 
 const STORAGE_KEY = "git-switch.theme";
 const ACCENT_KEY = "git-switch.accent";
-const CHANGE_EVENT = "git-switch.theme:change";
-
 function detectSystemTheme(): Theme {
   if (typeof window === "undefined") return "light";
   return window.matchMedia("(prefers-color-scheme: dark)").matches
@@ -48,7 +46,6 @@ export const themeStore = {
   save(theme: Theme): void {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(STORAGE_KEY, theme);
-    window.dispatchEvent(new Event(CHANGE_EVENT));
   },
 
   loadAccent(): Accent {
@@ -60,13 +57,6 @@ export const themeStore = {
   saveAccent(accent: Accent): void {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(ACCENT_KEY, accent);
-    window.dispatchEvent(new Event(CHANGE_EVENT));
-  },
-
-  subscribe(handler: () => void): () => void {
-    if (typeof window === "undefined") return () => {};
-    window.addEventListener(CHANGE_EVENT, handler);
-    return () => window.removeEventListener(CHANGE_EVENT, handler);
   },
 
   STORAGE_KEY,

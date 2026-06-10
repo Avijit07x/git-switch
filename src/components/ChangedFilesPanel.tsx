@@ -1,5 +1,12 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, Ban, Eye, FileText, Undo2 } from "lucide-react";
+import {
+  AlertTriangle,
+  Ban,
+  Eye,
+  FileText,
+  RefreshCcw,
+  Undo2,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,6 +47,9 @@ export function ChangedFilesPanel({
 }: ChangedFilesPanelProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [anchorIndex, setAnchorIndex] = useState<number | null>(null);
+  // Bumped on every refresh click; remounts the icon so the one-shot spin
+  // animation restarts even on rapid consecutive clicks.
+  const [refreshTick, setRefreshTick] = useState(0);
 
   const rawFiles = status?.files ?? [];
   const files = useMemo(() => sortFiles(rawFiles), [rawFiles]);
@@ -115,10 +125,11 @@ export function ChangedFilesPanel({
             </span>
           ) : null}
         </h3>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
           <Button
             size="sm"
             variant="outline"
+            className="h-7 px-2.5 text-xs"
             onClick={handleStageSelected}
             loading={isStaging}
             loadingText="Staging…"
@@ -129,6 +140,7 @@ export function ChangedFilesPanel({
           <Button
             size="sm"
             variant="outline"
+            className="h-7 px-2.5 text-xs"
             onClick={onStageAll}
             loading={isStaging}
             loadingText="Staging…"
@@ -139,6 +151,7 @@ export function ChangedFilesPanel({
           <Button
             size="sm"
             variant="outline"
+            className="h-7 px-2.5 text-xs"
             onClick={handleUnstageSelected}
             loading={isUnstaging}
             loadingText="Unstaging…"
@@ -146,20 +159,33 @@ export function ChangedFilesPanel({
           >
             Unstage selected
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={onRefresh}
-            loading={loading}
-            loadingText="Refreshing…"
-            disabled={busy}
-          >
-            Refresh
-          </Button>
+          <IconHint label="Refresh status" side="top">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-7"
+              onClick={() => {
+                setRefreshTick((t) => t + 1);
+                onRefresh();
+              }}
+              disabled={busy || loading}
+              aria-label="Refresh status"
+            >
+              <RefreshCcw
+                key={refreshTick}
+                className={cn(
+                  "size-3.5",
+                  loading
+                    ? "animate-spin"
+                    : refreshTick > 0 && "animate-spin-once",
+                )}
+              />
+            </Button>
+          </IconHint>
         </div>
       </header>
 
-      <ScrollArea className="flex-1 rounded-md border">
+      <ScrollArea className="flex-1 rounded-lg border bg-card/50">
         {files.length === 0 ? (
           <div className="flex h-32 items-center justify-center text-xs text-muted-foreground">
             {loading ? "Loading…" : "Working tree clean."}
@@ -221,7 +247,7 @@ export function ChangedFilesPanel({
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="size-6 text-muted-foreground hover:text-foreground"
+                        className="size-6 text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
                         onClick={(e) => {
                           e.stopPropagation();
                           onViewDiff(file.path, file.staged);
@@ -238,7 +264,7 @@ export function ChangedFilesPanel({
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="size-6 text-muted-foreground hover:text-foreground"
+                        className="size-6 text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
                         onClick={(e) => {
                           e.stopPropagation();
                           onUnstage([file.path]);
@@ -254,7 +280,7 @@ export function ChangedFilesPanel({
                     <Button
                       size="icon"
                       variant="ghost"
-                      className="size-6 text-muted-foreground hover:text-destructive"
+                      className="size-6 text-muted-foreground opacity-0 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
                       onClick={(e) => {
                         e.stopPropagation();
                         onIgnore(file.path);
@@ -271,10 +297,6 @@ export function ChangedFilesPanel({
           </ul>
         )}
       </ScrollArea>
-      <p className="mt-1 text-[10px] text-muted-foreground">
-        Tip: hold <kbd className="rounded bg-muted px-1">Shift</kbd> to select a
-        range.
-      </p>
     </section>
   );
 }

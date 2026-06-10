@@ -82,11 +82,13 @@ export function GroupDashboard({
   return (
     <main className="flex h-full min-w-0 flex-1 flex-col">
       <header
-        className="flex h-12 items-center gap-3 border-b bg-muted/20 px-6 text-sm"
+        className="flex h-12 shrink-0 items-center gap-3 border-b border-border/70 px-6 text-sm"
         data-tauri-drag-region
       >
-        <FolderGit2 className="h-4 w-4 text-muted-foreground" />
-        <span className="font-semibold">{group.name}</span>
+        <span className="flex size-6 items-center justify-center rounded-md border border-border/60 bg-card shadow-2xs">
+          <FolderGit2 className="h-3.5 w-3.5 text-muted-foreground" />
+        </span>
+        <span className="font-semibold tracking-tight">{group.name}</span>
         <Badge variant="outline">
           {repositories.length} project{repositories.length === 1 ? "" : "s"}
         </Badge>

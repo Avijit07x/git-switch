@@ -67,18 +67,24 @@ function RepositorySidebarRowImpl({
   return (
     <div
       className={cn(
-        "group flex h-[48px] cursor-pointer items-center gap-2 rounded-md px-2.5 text-left",
+        "group relative flex h-12 cursor-pointer items-center gap-2 rounded-lg px-2.5 text-left transition-[background-color,box-shadow] duration-150",
         active
-          ? "bg-foreground/10 text-foreground"
+          ? "surface-sheen bg-card text-foreground shadow-sm ring-1 ring-border/70"
           : loaded && tone
             ? TONE_BG[tone]
-            : "hover:bg-accent",
+            : "hover:bg-foreground/5",
       )}
       onClick={() => onSelect(repository.id)}
       role="button"
       tabIndex={0}
       title={repository.path}
     >
+      {active ? (
+        <span
+          aria-hidden
+          className="absolute left-0 top-1/2 h-6 w-0.75 -translate-y-1/2 rounded-r-full bg-primary"
+        />
+      ) : null}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <p className="truncate text-sm font-semibold leading-tight">

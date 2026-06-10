@@ -5,6 +5,7 @@ import "@xterm/xterm/css/xterm.css";
 
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/hooks/use-theme";
+import { processOutputStore } from "@/stores/use-process-output-store";
 import type { ProcessStatus } from "@/lib/types";
 
 // Single-responsibility: real xterm.js terminal. Lives in its own file so the
@@ -17,6 +18,7 @@ import type { ProcessStatus } from "@/lib/types";
 const SCROLLBACK = 1500;
 
 interface LiveTerminalProps {
+  processId: string;
   status: ProcessStatus;
   exitCode: number | null;
   registerSink: (sink: ((chunk: string) => void) | null) => void;
@@ -25,6 +27,7 @@ interface LiveTerminalProps {
 }
 
 export default function LiveTerminal({
+  processId,
   status,
   exitCode,
   registerSink,
@@ -64,6 +67,11 @@ export default function LiveTerminal({
     fitRef.current = fit;
 
     registerSink((chunk) => term.write(chunk));
+
+    const buffered = processOutputStore.get(processId);
+    if (buffered) {
+      term.write(buffered);
+    }
 
     const inputDisposable = term.onData((data) => onInput?.(data));
     const resizeDisposable = term.onResize(({ cols, rows }) =>
@@ -114,7 +122,10 @@ export default function LiveTerminal({
           size="sm"
           variant="ghost"
           className="h-6 px-2 text-xs"
-          onClick={() => termRef.current?.clear()}
+          onClick={() => {
+            termRef.current?.clear();
+            processOutputStore.clear(processId);
+          }}
         >
           Clear
         </Button>

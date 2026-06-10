@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import { GitBranch as GitBranchIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -75,13 +75,16 @@ export function BranchSelector({
   };
 
   return (
-    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-      <Field label="Local branch">
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+      <div
+        className="flex min-w-0 max-w-96 flex-1 basis-60 items-center gap-1.5"
+        title="Switch to a local branch"
+      >
         <BranchCombobox
           value={localValue}
           onChange={setPendingLocal}
           options={localOptions}
-          placeholder="Select branch"
+          placeholder="Switch to branch…"
           searchPlaceholder="Search local branches…"
           emptyMessage="No matching branches."
           groupHeading="Local branches"
@@ -106,14 +109,17 @@ export function BranchSelector({
         >
           Switch
         </Button>
-      </Field>
+      </div>
 
-      <Field label="Remote branch (check out as local)">
+      <div
+        className="flex min-w-0 max-w-96 flex-1 basis-60 items-center gap-1.5"
+        title="Check out a remote branch as a new local branch"
+      >
         <BranchCombobox
           value={remoteValue}
           onChange={setPendingRemote}
           options={remoteOptions}
-          placeholder="Select remote branch"
+          placeholder="Check out remote…"
           searchPlaceholder="Search remote branches…"
           emptyMessage="No matching branches."
           groupHeading="Remote branches"
@@ -131,24 +137,7 @@ export function BranchSelector({
         >
           Check out
         </Button>
-      </Field>
-    </div>
-  );
-}
-
-// Single-responsibility: label + control-row layout for one branch field.
-interface FieldProps {
-  label: string;
-  children: ReactNode;
-}
-
-function Field({ label, children }: FieldProps) {
-  return (
-    <div className="min-w-0 space-y-1">
-      <label className="text-xs font-medium text-muted-foreground">
-        {label}
-      </label>
-      <div className="flex min-w-0 items-center gap-2">{children}</div>
+      </div>
     </div>
   );
 }

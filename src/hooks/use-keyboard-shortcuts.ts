@@ -5,6 +5,8 @@ export interface ShortcutHandler {
   key: string;
   shift?: boolean;
   meta?: boolean; // ⌘ on macOS / ctrl elsewhere
+  /** Strictly the Control key on every platform (e.g. VS Code's ctrl+`). */
+  ctrl?: boolean;
   /** Whether to fire when the focus is inside an input/textarea. Default: false. */
   allowInInput?: boolean;
   run: (e: KeyboardEvent) => void;
@@ -26,8 +28,13 @@ export function useKeyboardShortcuts(handlers: ShortcutHandler[]): void {
       const meta = e.metaKey || e.ctrlKey;
       for (const h of handlers) {
         if (h.key.toLowerCase() !== e.key.toLowerCase()) continue;
-        if (h.meta && !meta) continue;
-        if (!h.meta && meta) continue;
+        if (h.ctrl) {
+          if (!e.ctrlKey) continue;
+        } else if (h.meta) {
+          if (!meta) continue;
+        } else if (meta) {
+          continue;
+        }
         if (!!h.shift !== e.shiftKey) continue;
         if (!h.allowInInput && isEditableTarget(e.target)) continue;
         e.preventDefault();

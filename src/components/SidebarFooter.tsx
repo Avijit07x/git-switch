@@ -1,82 +1,52 @@
-import { Suspense, lazy, useState } from "react";
-import { KeyRound, Settings as SettingsIcon, Sparkles } from "lucide-react";
+import { KeyRound, Sparkles } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import { IconHint } from "@/components/IconHint";
 import { useSettings } from "@/hooks/use-settings";
 import { cn } from "@/lib/utils";
 
 import { Logo } from "./Logo";
 
-// Single-responsibility: keep SettingsDialog out of the initial bundle —
-// users open it rarely. Lazy-load on first state flip.
-const SettingsDialog = lazy(() =>
-  import("./SettingsDialog").then((m) => ({ default: m.SettingsDialog })),
-);
-
-// Single-responsibility: bottom sidebar slot showing the active profile,
-// integration status (SSH key + AI key) and a settings shortcut. Replaces
-// the older "Made with ❤" credit line.
+// Single-responsibility: bottom sidebar slot showing the active profile and
+// integration status (SSH key + AI key). Replaces the older
+// "Made with ❤" credit line.
 export function SidebarFooter() {
   const { settings } = useSettings();
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const active = settings.profiles.find((p) => p.id === settings.activeProfileId);
   const hasSshKey = !!active?.sshKeyPath?.trim();
   const hasGeminiKey = settings.geminiApiKey.trim().length > 0;
 
   return (
-    <>
-      <footer className="flex items-center gap-2.5 border-t bg-muted/20 px-3 py-2.5">
-        <Avatar name={active?.name ?? null} />
+    <footer className="flex items-center gap-2.5 border-t border-sidebar-border px-3 py-2.5">
+      <Avatar name={active?.name ?? null} />
 
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[12px] font-semibold leading-tight">
-            {active?.name ?? "No profile"}
-          </p>
-          <div className="mt-1 flex items-center gap-1">
-            <StatusChip
-              icon={<KeyRound className="size-2.5" strokeWidth={2.5} />}
-              label={hasSshKey ? "SSH" : "System SSH"}
-              active={hasSshKey}
-              title={
-                hasSshKey
-                  ? `Using ${active?.sshKeyPath}`
-                  : "No profile selected — using your system's default SSH config"
-              }
-            />
-            <StatusChip
-              icon={<Sparkles className="size-2.5" strokeWidth={2.5} />}
-              label="AI"
-              active={hasGeminiKey}
-              title={
-                hasGeminiKey
-                  ? "Gemini key configured"
-                  : "No Gemini key — AI commit messages disabled"
-              }
-            />
-          </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[12px] font-semibold leading-tight">
+          {active?.name ?? "No profile"}
+        </p>
+        <div className="mt-1 flex items-center gap-1">
+          <StatusChip
+            icon={<KeyRound className="size-2.5" strokeWidth={2.5} />}
+            label={hasSshKey ? "SSH" : "System SSH"}
+            active={hasSshKey}
+            title={
+              hasSshKey
+                ? `Using ${active?.sshKeyPath}`
+                : "No profile selected — using your system's default SSH config"
+            }
+          />
+          <StatusChip
+            icon={<Sparkles className="size-2.5" strokeWidth={2.5} />}
+            label="AI"
+            active={hasGeminiKey}
+            title={
+              hasGeminiKey
+                ? "Gemini key configured"
+                : "No Gemini key — AI commit messages disabled"
+            }
+          />
         </div>
-
-        <IconHint label="Settings" side="top">
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-7"
-            onClick={() => setSettingsOpen(true)}
-            aria-label="Settings"
-          >
-            <SettingsIcon className="size-3.5" />
-          </Button>
-        </IconHint>
-      </footer>
-
-      {settingsOpen ? (
-        <Suspense fallback={null}>
-          <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
-        </Suspense>
-      ) : null}
-    </>
+      </div>
+    </footer>
   );
 }
 

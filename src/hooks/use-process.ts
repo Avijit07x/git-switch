@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 
 import { processClient } from "@/lib/process-client";
+import { processOutputStore } from "@/stores/use-process-output-store";
 import type {
   ProcessDataEvent,
   ProcessExitEvent,
@@ -37,6 +38,10 @@ export function useProcess(repoId: string | undefined): UseProcessResult {
     let unlistenData: (() => void) | undefined;
     let unlistenExit: (() => void) | undefined;
     let cancelled = false;
+
+    // The store keeps its own app-lifetime listener so output is buffered
+    // even while this hook (and the repo's dashboard) is unmounted.
+    processOutputStore.track(repoId);
 
     readyRef.current = (async () => {
       const offData = await listen<ProcessDataEvent>(
@@ -108,12 +113,15 @@ export function useProcess(repoId: string | undefined): UseProcessResult {
       }
       setExitCode(null);
       setStatus("running");
+      processOutputStore.clear(repoId);
       try {
         await processClient.start(repoId, command, cwd, killPort);
       } catch (err) {
         setStatus("errored");
         const msg = err instanceof Error ? err.message : String(err);
-        sinkRef.current?.(`\r\n\x1b[31m${msg}\x1b[0m\r\n`);
+        const line = `\r\n\x1b[31m${msg}\x1b[0m\r\n`;
+        processOutputStore.append(repoId, line);
+        sinkRef.current?.(line);
       }
     },
     [repoId],

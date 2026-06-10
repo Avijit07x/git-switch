@@ -8,8 +8,8 @@ import { cn } from "@/lib/utils";
 const buttonVariants = cva(
   [
     "relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium",
-    "transition-[transform,background-color,color,opacity,box-shadow] duration-100",
-    "active:scale-[0.97] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+    "transition-[transform,background-color,color,opacity,box-shadow,filter] duration-150 ease-out",
+    "active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
     "disabled:pointer-events-none disabled:opacity-50",
     // Loading state — wins over disabled because data-attribute selectors have
     // higher specificity than pseudo-class selectors.
@@ -19,21 +19,21 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow hover:bg-primary/90 data-[loading=true]:bg-primary/80",
+          "btn-sheen text-primary-foreground data-[loading=true]:opacity-90",
         destructive:
-          "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90 data-[loading=true]:bg-destructive/80",
+          "btn-sheen [--sheen:var(--destructive)] text-destructive-foreground data-[loading=true]:opacity-90",
         outline:
-          "border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground data-[loading=true]:bg-accent data-[loading=true]:text-accent-foreground data-[loading=true]:border-accent",
+          "border border-border bg-card shadow-xs hover:bg-accent hover:text-accent-foreground data-[loading=true]:bg-accent data-[loading=true]:text-accent-foreground",
         secondary:
-          "bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80 data-[loading=true]:bg-secondary/70",
+          "bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80 data-[loading=true]:bg-secondary/70",
         ghost:
-          "hover:bg-accent hover:text-accent-foreground data-[loading=true]:bg-accent",
+          "text-muted-foreground hover:bg-accent hover:text-foreground data-[loading=true]:bg-accent",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
         default: "h-9 px-4 py-2",
         sm: "h-8 rounded-md px-3 text-xs",
-        lg: "h-10 rounded-md px-8",
+        lg: "h-10 rounded-lg px-8",
         icon: "h-9 w-9",
       },
     },

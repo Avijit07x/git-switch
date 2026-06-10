@@ -7,6 +7,7 @@ import type {
   GitStatus,
   LastCommit,
   QuickStatus,
+  ScannedEntry,
 } from "./types";
 
 // Thin, single-responsibility wrapper over Tauri invokes. Each function maps
@@ -16,6 +17,12 @@ import type {
 export const gitClient = {
   validateRepository: (path: string): Promise<string> =>
     invoke<string>("validate_repository", { path }),
+
+  initRepository: (path: string): Promise<GitCommandResult> =>
+    invoke<GitCommandResult>("init_repository", { path }),
+
+  scanDirectory: (base: string): Promise<ScannedEntry[]> =>
+    invoke<ScannedEntry[]>("scan_directory", { base }),
 
   cloneRepository: (
     url: string,
@@ -123,6 +130,9 @@ export const gitClient = {
     staged: boolean,
   ): Promise<string> =>
     invoke<string>("get_file_diff", { path, file, staged }),
+
+  getCommitDiff: (path: string, hash: string): Promise<string> =>
+    invoke<string>("get_commit_diff", { path, hash }),
 } as const;
 
 export type GitClient = typeof gitClient;

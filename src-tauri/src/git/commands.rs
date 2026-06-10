@@ -34,6 +34,11 @@ pub async fn validate_repository(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+pub async fn init_repository(path: String) -> Result<GitCommandResult, String> {
+    blocking(move || service::init_repository(&path)).await
+}
+
+#[tauri::command]
 pub async fn clone_repository(
     url: String,
     target_dir: String,
@@ -175,4 +180,9 @@ pub async fn get_file_diff(
     staged: bool,
 ) -> Result<String, String> {
     blocking(move || service::get_file_diff(&path, &file, staged)).await
+}
+
+#[tauri::command]
+pub async fn get_commit_diff(path: String, hash: String) -> Result<String, String> {
+    blocking(move || service::get_commit_diff(&path, &hash)).await
 }

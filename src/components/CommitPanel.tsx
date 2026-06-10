@@ -1,53 +1,18 @@
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import { GitCommitHorizontal, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useSettings } from "@/hooks/use-settings";
-import {
-  generateCommitMessage,
-  listGeminiModels,
-  type ListedModel,
-} from "@/lib/gemini";
-import { gitClient } from "@/lib/git-client";
 import type { GitOperation, GitStatus } from "@/lib/types";
 
-// Treat both "model doesn't exist" and "quota exhausted" as triggers to
-// auto-pick a different model. limit:0 means the key has no free quota for
-// that model at all — pick something more generous instead.
-function shouldFallbackModel(message: string): boolean {
-  return /not found|not supported|not available|unsupported model|quota|limit:\s*0|resource_exhausted|rate.?limit/i.test(
-    message,
-  );
-}
-
-// Prefer models with the widest free-tier availability so the auto-fallback
-// lands on one that actually works for first-time keys.
-const PREFERENCE_PATTERNS: RegExp[] = [
-  /^gemini-1\.5-flash-8b$/,
-  /^gemini-1\.5-flash$/,
-  /^gemini-1\.5-flash/,
-  /^gemini-1\.5-pro/,
-  /^gemini-2\.5-flash-lite/,
-  /^gemini-2\.0-flash-lite/,
-  /^gemini-2\.5-flash/,
-  /^gemini-2\.0-flash/,
-];
-
-function pickFallbackModel(
-  available: ListedModel[],
-  exclude: ReadonlySet<string>,
-): ListedModel | null {
-  const pool = available.filter((m) => !exclude.has(m.id));
-  if (pool.length === 0) return null;
-  for (const pattern of PREFERENCE_PATTERNS) {
-    const match = pool.find((m) => pattern.test(m.id));
-    if (match) return match;
-  }
-  return pool[0];
-}
+// Lazy — only loaded the first time the user reaches for AI generation.
+const GenerateCommitDialog = lazy(() =>
+  import("./GenerateCommitDialog").then((m) => ({
+    default: m.GenerateCommitDialog,
+  })),
+);
 
 interface CommitPanelProps {
   repositoryPath: string;
@@ -57,8 +22,8 @@ interface CommitPanelProps {
   onCommit: (message: string) => Promise<unknown>;
 }
 
-// Single-responsibility: capture a commit message (manually or via Gemini)
-// and trigger the commit.
+// Single-responsibility: capture a commit message (manually or via the AI
+// dialog) and trigger the commit.
 export function CommitPanel({
   repositoryPath,
   status,
@@ -67,8 +32,8 @@ export function CommitPanel({
   onCommit,
 }: CommitPanelProps) {
   const [message, setMessage] = useState("");
-  const [generating, setGenerating] = useState(false);
-  const { settings, update } = useSettings();
+  const [aiOpen, setAiOpen] = useState(false);
+  const { settings } = useSettings();
 
   const isCommitting = operation === "committing";
   const stagedCount = (status?.files ?? []).filter((f) => f.staged).length;
@@ -81,84 +46,21 @@ export function CommitPanel({
     setMessage("");
   };
 
-  const handleGenerate = async () => {
-    if (generating) return;
+  const handleOpenGenerate = () => {
     if (!hasApiKey) {
       toast.error("Add your Gemini API key in Settings first.");
       return;
     }
-    if (stagedCount === 0) {
-      toast.info("Stage at least one file to generate a message.");
-      return;
-    }
-
-    setGenerating(true);
-    try {
-      const diffRes = await gitClient.getStagedDiff(repositoryPath);
-      if (!diffRes.success) {
-        throw new Error(diffRes.stderr.trim() || "git diff --cached failed");
-      }
-
-      const tried = new Set<string>();
-      let currentModel = settings.geminiModel;
-      let availableCache: ListedModel[] | null = null;
-      let generated: string | null = null;
-
-      while (true) {
-        tried.add(currentModel);
-        try {
-          generated = await generateCommitMessage(
-            settings.geminiApiKey,
-            currentModel,
-            diffRes.stdout,
-          );
-          break;
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (!shouldFallbackModel(msg)) throw err;
-
-          // Fetch the live list once and try the next-best model we haven't
-          // already attempted. Stop when we run out of candidates.
-          availableCache ??= await listGeminiModels(settings.geminiApiKey);
-          const next = pickFallbackModel(availableCache, tried);
-          if (!next) {
-            throw new Error(
-              `No working Gemini model for this key. Last error: ${msg}`,
-            );
-          }
-          toast.info(`Switched model to ${next.id}`, {
-            description: `${currentModel} was unavailable or out of quota.`,
-          });
-          currentModel = next.id;
-        }
-      }
-
-      if (currentModel !== settings.geminiModel) {
-        update({ geminiModel: currentModel });
-      }
-      setMessage(generated);
-      toast.success("Commit message generated");
-    } catch (err) {
-      toast.error("Generation failed", {
-        description: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      setGenerating(false);
-    }
+    setAiOpen(true);
   };
 
   return (
-    <section className="space-y-2">
-      <div className="flex items-baseline justify-between">
-        <Label htmlFor="commit-message">Commit message</Label>
-        <span className="text-xs text-muted-foreground">
-          {stagedCount} file{stagedCount === 1 ? "" : "s"} staged
-        </span>
-      </div>
+    <section className="shrink-0 space-y-2">
       <Textarea
         id="commit-message"
-        placeholder="Describe your change…  ⌘↵ to commit"
-        className="placeholder:text-xs"
+        aria-label="Commit message"
+        placeholder="Commit message…  ⌘↵ to commit"
+        className="resize-none placeholder:text-xs"
         value={message}
         onChange={(e) => setMessage(e.target.value)}
         onKeyDown={(e) => {
@@ -167,35 +69,50 @@ export function CommitPanel({
             if (canCommit && !busy) void handleCommit();
           }
         }}
-        rows={3}
-        disabled={busy || generating}
+        rows={2}
+        disabled={busy}
       />
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2">
         <Button
           size="sm"
           variant="outline"
-          onClick={handleGenerate}
-          loading={generating}
-          loadingText="Generating…"
+          onClick={handleOpenGenerate}
           disabled={busy || stagedCount === 0}
           title={
             !hasApiKey ? "Add your Gemini API key in Settings" : undefined
           }
         >
           <Sparkles className="size-3.5" />
-          Generate with Gemini
+          Generate with AI
         </Button>
 
+        <span className="ml-auto text-[11px] text-muted-foreground tabular-nums">
+          {stagedCount === 0
+            ? "Stage files to commit"
+            : `${stagedCount} file${stagedCount === 1 ? "" : "s"} staged`}
+        </span>
         <Button
+          size="sm"
           onClick={handleCommit}
           loading={isCommitting}
           loadingText="Committing…"
           disabled={!canCommit || (busy && !isCommitting)}
         >
-          <GitCommitHorizontal className="h-4 w-4" />
+          <GitCommitHorizontal className="size-3.5" />
           Commit
         </Button>
       </div>
+
+      {aiOpen ? (
+        <Suspense fallback={null}>
+          <GenerateCommitDialog
+            open={aiOpen}
+            onOpenChange={setAiOpen}
+            repositoryPath={repositoryPath}
+            onUse={setMessage}
+          />
+        </Suspense>
+      ) : null}
     </section>
   );
 }

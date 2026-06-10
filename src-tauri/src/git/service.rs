@@ -14,6 +14,26 @@ pub fn validate_repository(path: &str) -> GitResult<String> {
     resolve_repo_root(path).map(|p| p.display().to_string())
 }
 
+/// Single-responsibility: run `git init` inside `path`. Used when the user
+/// adds a non-git folder via the directory scanner and clicks "Initialize
+/// Git" on the empty-state dashboard. Fails if the folder already has a
+/// .git so we don't accidentally re-init and lose user state.
+pub fn init_repository(path: &str) -> GitResult<GitCommandResult> {
+    let candidate = std::path::PathBuf::from(path);
+    if !candidate.exists() {
+        return Err(GitError::PathNotFound(path.to_string()));
+    }
+    if !candidate.is_dir() {
+        return Err(GitError::NotADirectory(path.to_string()));
+    }
+    if candidate.join(".git").exists() {
+        return Err(GitError::InvalidInput(
+            "This folder already has a .git — already initialized.".to_string(),
+        ));
+    }
+    run_git(&candidate, &["init"])
+}
+
 /// Accept only the transports `git` actually supports + a conservative
 /// character set that covers every real-world clone URL. No shell metachars
 /// can reach git anyway (we pass args as an array), but rejecting suspicious
@@ -761,6 +781,33 @@ pub fn get_file_diff(path: &str, file: &str, staged: bool) -> GitResult<String> 
                 return Ok(r.stdout);
             }
         }
+    }
+    Ok(res.stdout)
+}
+
+/// Full patch for one commit (`git show`), used by the history viewer.
+/// The hash is validated as strict hex so arbitrary flags or refs can never
+/// reach git. `--format=` suppresses the header — the UI already has the
+/// commit metadata from the history list.
+pub fn get_commit_diff(path: &str, hash: &str) -> GitResult<String> {
+    let trimmed = hash.trim();
+    let valid_hash = trimmed.len() >= 4
+        && trimmed.len() <= 64
+        && trimmed.chars().all(|c| c.is_ascii_hexdigit());
+    if !valid_hash {
+        return Err(GitError::InvalidInput("Invalid commit hash".into()));
+    }
+    let root = resolve_repo_root(path)?;
+    let res = run_git(
+        &root,
+        &["show", trimmed, "--no-color", "--format=", "--patch"],
+    )?;
+    if !res.success {
+        return Err(GitError::InvalidInput(if res.stderr.trim().is_empty() {
+            format!("Unknown commit: {trimmed}")
+        } else {
+            res.stderr.trim().to_string()
+        }));
     }
     Ok(res.stdout)
 }

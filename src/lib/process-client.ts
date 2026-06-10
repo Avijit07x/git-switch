@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import { processOutputStore } from "@/stores/use-process-output-store";
+
 // Single-responsibility: thin typed wrappers over the Rust process commands.
 export const processClient = {
   start: (
@@ -7,8 +9,12 @@ export const processClient = {
     command: string,
     cwd: string,
     killPort?: number,
-  ): Promise<void> =>
-    invoke<void>("start_process", { repoId, command, cwd, killPort }),
+  ): Promise<void> => {
+    // Every start path funnels through here, so this is the one spot that
+    // guarantees output is buffered even when no dashboard is mounted.
+    processOutputStore.track(repoId);
+    return invoke<void>("start_process", { repoId, command, cwd, killPort });
+  },
 
   stop: (repoId: string): Promise<boolean> =>
     invoke<boolean>("stop_process", { repoId }),

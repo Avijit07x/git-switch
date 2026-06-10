@@ -1,25 +1,23 @@
 import { memo, useMemo } from "react";
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { useCommandLogStore } from "@/stores/use-command-log-store";
 import type { CommandLogEntry } from "@/lib/types";
 
 interface CommandOutputPanelProps {
-  entries: CommandLogEntry[];
   repositoryId: string | null;
-  onClear: () => void;
 }
 
 // Single-responsibility: render the rolling command log for the active repo.
 // Entries appear immediately on click as "RUNNING", then transition to
-// "OK" or "EXIT <code>" once the underlying Git command resolves.
-export function CommandOutputPanel({
-  entries,
-  repositoryId,
-  onClear,
-}: CommandOutputPanelProps) {
+// "OK" or "EXIT <code>" once the underlying Git command resolves. Panel
+// chrome (tab strip, Clear action) is owned by the dashboard's bottom panel.
+// Subscribes to the log store directly so log churn re-renders only this
+// panel, not the component tree above it.
+export function CommandOutputPanel({ repositoryId }: CommandOutputPanelProps) {
+  const entries = useCommandLogStore((s) => s.entries);
   const filtered = useMemo(
     () =>
       repositoryId ? entries.filter((e) => e.repositoryId === repositoryId) : [],
@@ -27,35 +25,19 @@ export function CommandOutputPanel({
   );
 
   return (
-    <section className="flex h-full flex-col rounded-md border bg-muted/20">
-      <header className="flex items-center justify-between border-b px-3 py-1.5">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Command output
-        </h3>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-6 px-2 text-xs"
-          onClick={onClear}
-          disabled={filtered.length === 0}
-        >
-          <Trash2 className="size-3" /> Clear
-        </Button>
-      </header>
-      <ScrollArea className="flex-1">
-        {filtered.length === 0 ? (
-          <p className="px-3 py-4 text-xs text-muted-foreground">
-            No commands run yet.
-          </p>
-        ) : (
-          <ul className="divide-y">
-            {filtered.map((entry) => (
-              <LogRow key={entry.id} entry={entry} />
-            ))}
-          </ul>
-        )}
-      </ScrollArea>
-    </section>
+    <ScrollArea className="min-h-0 flex-1 rounded-lg border bg-card/50">
+      {filtered.length === 0 ? (
+        <p className="px-3 py-4 text-xs text-muted-foreground">
+          No commands run yet.
+        </p>
+      ) : (
+        <ul className="divide-y">
+          {filtered.map((entry) => (
+            <LogRow key={entry.id} entry={entry} />
+          ))}
+        </ul>
+      )}
+    </ScrollArea>
   );
 }
 

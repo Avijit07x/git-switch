@@ -25,6 +25,7 @@ function idlePalette(isDark: boolean) {
 }
 
 interface ProcessOutputPanelProps {
+  processId: string;
   status: ProcessStatus;
   exitCode: number | null;
   registerSink: (sink: ((chunk: string) => void) | null) => void;

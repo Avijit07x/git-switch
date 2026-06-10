@@ -15,8 +15,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -162,7 +162,7 @@ export function GitActionsPanel({
             loading={primaryProps.loading}
             loadingText={primaryProps.loadingText}
             disabled={primaryProps.disabled}
-            className="min-w-[8.5rem]"
+            className="min-w-34"
           >
             {primaryProps.icon}
             {primary.label}
@@ -192,14 +192,14 @@ export function GitActionsPanel({
           </TooltipTrigger>
           <TooltipContent side="bottom">More git actions</TooltipContent>
         </Tooltip>
-        <DropdownMenuContent align="start" className="w-52">
-          <DropdownMenuLabel>Sync</DropdownMenuLabel>
+        <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuItem
             onSelect={onRefresh}
             disabled={busy}
           >
             <RefreshCcw className="h-3.5 w-3.5" />
             <span>Refresh</span>
+            <DropdownMenuShortcut>⌘R</DropdownMenuShortcut>
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() => void onFetch()}
@@ -207,6 +207,7 @@ export function GitActionsPanel({
           >
             <Download className="h-3.5 w-3.5" />
             <span>Fetch</span>
+            <DropdownMenuShortcut>⇧⌘F</DropdownMenuShortcut>
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() => void onPull()}
@@ -214,6 +215,7 @@ export function GitActionsPanel({
           >
             <ArrowDownToLine className="h-3.5 w-3.5" />
             <span>Pull</span>
+            <DropdownMenuShortcut>⌘P</DropdownMenuShortcut>
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() => void handlePush()}
@@ -221,17 +223,18 @@ export function GitActionsPanel({
           >
             <ArrowUpFromLine className="h-3.5 w-3.5" />
             <span>Push</span>
+            <DropdownMenuShortcut>⇧⌘P</DropdownMenuShortcut>
           </DropdownMenuItem>
 
           <DropdownMenuSeparator />
 
-          <DropdownMenuLabel>Branch</DropdownMenuLabel>
           <DropdownMenuItem
             onSelect={onCreateBranch}
             disabled={isCreating}
           >
             <GitBranchPlus className="h-3.5 w-3.5" />
             <span>Create branch</span>
+            <DropdownMenuShortcut>⇧⌘N</DropdownMenuShortcut>
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() => void handlePublish()}
@@ -245,10 +248,10 @@ export function GitActionsPanel({
 
           <DropdownMenuSeparator />
 
-          <DropdownMenuLabel>Inspect</DropdownMenuLabel>
           <DropdownMenuItem onSelect={onShowHistory}>
             <Clock className="h-3.5 w-3.5" />
             <span>Show history</span>
+            <DropdownMenuShortcut>⇧⌘H</DropdownMenuShortcut>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

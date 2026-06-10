@@ -1,6 +1,6 @@
-// Single-responsibility: persist app-wide settings (Gemini API key + model,
-// etc.) to localStorage and broadcast in-process changes so all useSettings()
-// consumers stay in sync without needing a context provider.
+// Single-responsibility: validated load/save of app-wide settings (Gemini
+// API key + model, profiles) against localStorage. Reactive state lives in
+// `stores/use-settings-store`, which writes through this module.
 
 // Fallback catalog used before the user verifies a key. Once we've fetched
 // the live list from the API, we use that instead.
@@ -46,7 +46,6 @@ function isProfile(value: unknown): value is Profile {
 }
 
 const STORAGE_KEY = "git-switch.settings";
-const CHANGE_EVENT = "git-switch.settings:change";
 
 const defaults: AppSettings = {
   geminiApiKey: "",
@@ -91,12 +90,5 @@ export const settingsStore = {
   save(next: AppSettings): void {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    window.dispatchEvent(new Event(CHANGE_EVENT));
-  },
-
-  subscribe(handler: () => void): () => void {
-    if (typeof window === "undefined") return () => {};
-    window.addEventListener(CHANGE_EVENT, handler);
-    return () => window.removeEventListener(CHANGE_EVENT, handler);
   },
 } as const;

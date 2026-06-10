@@ -14,6 +14,14 @@ export interface RunTarget {
   port?: number;
 }
 
+/** One folder found by `scan_directory`. Returned sorted: git repos first,
+    then alphabetic. The `path` is absolute. */
+export interface ScannedEntry {
+  name: string;
+  path: string;
+  isGitRepo: boolean;
+}
+
 export interface Repository {
   id: string;
   name: string;

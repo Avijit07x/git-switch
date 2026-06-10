@@ -61,6 +61,9 @@ jobs:
     timeout-minutes: 30
     needs: [prepare-release]
     if: ${{ always() && (needs.prepare-release.result == 'success' || needs.prepare-release.result == 'skipped') }}
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -110,6 +113,9 @@ jobs:
           if [ -n "$APP" ]; then
             tar -C "$BUNDLE_DIR/macos" -czf "dist-release/$(basename "$APP" .app)-${GITHUB_REF_NAME}.app.tar.gz" "$(basename "$APP")"
           fi
+          # Updater artifacts
+          find "$BUNDLE_DIR/macos" -name '*.app.tar.gz' -exec cp {} dist-release/ \; || true
+          find "$BUNDLE_DIR/macos" -name '*.app.tar.gz.sig' -exec cp {} dist-release/ \; || true
           ls -lah dist-release/
 
       - name: Upload macOS artifacts to Release
@@ -120,6 +126,7 @@ jobs:
           files: |
             dist-release/*.dmg
             dist-release/*.tar.gz
+            dist-release/*.sig
 
       - name: Upload workflow artifacts (no tag)
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -135,6 +142,9 @@ jobs:
     timeout-minutes: 25
     needs: [prepare-release]
     if: ${{ always() && (needs.prepare-release.result == 'success' || needs.prepare-release.result == 'skipped') }}
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -179,6 +189,7 @@ jobs:
           mkdir -p dist-release
           find "$BUNDLE_DIR/deb" -name '*.deb' -exec cp {} dist-release/ \; || true
           find "$BUNDLE_DIR/appimage" -name '*.AppImage' -exec cp {} dist-release/ \; || true
+          find "$BUNDLE_DIR/appimage" -name '*.AppImage.sig' -exec cp {} dist-release/ \; || true
           find "$BUNDLE_DIR/rpm" -name '*.rpm' -exec cp {} dist-release/ \; || true
           ls -lah dist-release/
 
@@ -190,6 +201,7 @@ jobs:
           files: |
             dist-release/*.deb
             dist-release/*.AppImage
+            dist-release/*.AppImage.sig
             dist-release/*.rpm
 
       - name: Upload workflow artifacts (no tag)
@@ -206,6 +218,9 @@ jobs:
     timeout-minutes: 35
     needs: [prepare-release]
     if: ${{ always() && (needs.prepare-release.result == 'success' || needs.prepare-release.result == 'skipped') }}
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -237,7 +252,9 @@ jobs:
           BUNDLE_DIR="src-tauri/target/release/bundle"
           mkdir -p dist-release
           find "$BUNDLE_DIR/msi" -name '*.msi' -exec cp {} dist-release/ \; || true
+          find "$BUNDLE_DIR/msi" -name '*.msi.sig' -exec cp {} dist-release/ \; || true
           find "$BUNDLE_DIR/nsis" -name '*.exe' -exec cp {} dist-release/ \; || true
+          find "$BUNDLE_DIR/nsis" -name '*.exe.sig' -exec cp {} dist-release/ \; || true
           ls -lah dist-release/
 
       - name: Upload Windows artifacts to Release
@@ -247,7 +264,9 @@ jobs:
           draft: false
           files: |
             dist-release/*.msi
+            dist-release/*.msi.sig
             dist-release/*.exe
+            dist-release/*.exe.sig
 
       - name: Upload workflow artifacts (no tag)
         if: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -255,3 +274,102 @@ jobs:
         with:
           name: git-switch-windows-x86_64
           path: dist-release/*
+
+  # ── Generate update manifest (latest.json) ────────────────────────────
+  # Runs after all platform builds complete. Downloads the .sig files from
+  # the release, assembles the latest.json with platform-specific URLs and
+  # signatures, and uploads it to the same release.
+  publish-update-manifest:
+    name: Publish update manifest
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-macos, build-linux, build-windows]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate latest.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          REPO="${GITHUB_REPOSITORY}"
+          BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          # Helper: download a .sig file content from the release
+          get_sig() {
+            local file="$1"
+            gh release download "$TAG" --pattern "$file" --dir /tmp/sigs 2>/dev/null || true
+            if [ -f "/tmp/sigs/$file" ]; then
+              cat "/tmp/sigs/$file"
+            else
+              echo ""
+            fi
+          }
+
+          mkdir -p /tmp/sigs
+
+          # List all assets to find the exact filenames
+          ASSETS=$(gh release view "$TAG" --json assets --jq '.assets[].name')
+          echo "Release assets:"
+          echo "$ASSETS"
+
+          # Find the macOS updater artifact (.app.tar.gz, not the manual one with tag in name)
+          MACOS_TAR=$(echo "$ASSETS" | grep '\.app\.tar\.gz$' | grep -v "${TAG}" | head -n1 || true)
+          MACOS_SIG_FILE="${MACOS_TAR}.sig"
+          MACOS_SIG=$(get_sig "$MACOS_SIG_FILE")
+
+          # Find Linux updater artifact
+          LINUX_APPIMAGE=$(echo "$ASSETS" | grep '\.AppImage$' | head -n1 || true)
+          LINUX_SIG_FILE="${LINUX_APPIMAGE}.sig"
+          LINUX_SIG=$(get_sig "$LINUX_SIG_FILE")
+
+          # Find Windows NSIS updater artifact
+          WIN_NSIS=$(echo "$ASSETS" | grep '\.exe$' | head -n1 || true)
+          WIN_NSIS_SIG_FILE="${WIN_NSIS}.sig"
+          WIN_NSIS_SIG=$(get_sig "$WIN_NSIS_SIG_FILE")
+
+          # Find Windows MSI updater artifact
+          WIN_MSI=$(echo "$ASSETS" | grep '\.msi$' | head -n1 || true)
+          WIN_MSI_SIG_FILE="${WIN_MSI}.sig"
+          WIN_MSI_SIG=$(get_sig "$WIN_MSI_SIG_FILE")
+
+          # Build the latest.json
+          cat > latest.json <<EOF
+          {
+            "version": "${VERSION}",
+            "notes": "See the release notes at ${BASE_URL}",
+            "pub_date": "${PUB_DATE}",
+            "platforms": {
+              "darwin-aarch64": {
+                "url": "${BASE_URL}/${MACOS_TAR}",
+                "signature": "${MACOS_SIG}"
+              },
+              "darwin-x86_64": {
+                "url": "${BASE_URL}/${MACOS_TAR}",
+                "signature": "${MACOS_SIG}"
+              },
+              "linux-x86_64": {
+                "url": "${BASE_URL}/${LINUX_APPIMAGE}",
+                "signature": "${LINUX_SIG}"
+              },
+              "windows-x86_64": {
+                "url": "${BASE_URL}/${WIN_NSIS}",
+                "signature": "${WIN_NSIS_SIG}"
+              }
+            }
+          }
+          EOF
+
+          echo "Generated latest.json:"
+          cat latest.json
+
+      - name: Upload latest.json to release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          files: latest.json
