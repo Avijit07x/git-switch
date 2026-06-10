@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 
@@ -41,7 +42,8 @@ export default function LiveTerminal({
   const isDark = theme === "dark";
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    const container = containerRef.current;
+    if (!container) return;
 
     const term = new Terminal({
       fontFamily:
@@ -56,12 +58,45 @@ export default function LiveTerminal({
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
-    term.open(containerRef.current);
+    term.open(container);
+
+    // GPU renderer — the DOM renderer stutters on fast output. Falls back
+    // silently when WebGL is unavailable (context limit, driver issues).
+    let webgl: WebglAddon | null = null;
     try {
-      fit.fit();
+      webgl = new WebglAddon();
+      term.loadAddon(webgl);
+      webgl.onContextLoss(() => {
+        webgl?.dispose();
+        webgl = null;
+      });
     } catch {
-      /* container not measured yet */
+      webgl?.dispose();
+      webgl = null;
     }
+
+    // term.onResize is the single source of resize IPC — it only fires when
+    // cols/rows actually change, so observer ticks never spam the backend.
+    // Registered before the first fit so the initial fit syncs the PTY.
+    const inputDisposable = term.onData((data) => onInput?.(data));
+    const resizeDisposable = term.onResize(({ cols, rows }) =>
+      onResize?.(cols, rows),
+    );
+
+    // Skip unmeasurable containers (collapsed panel → display:none ancestor):
+    // FitAddon would clamp them to its 2×1 minimum and shrink the PTY with it.
+    const fitIfMeasurable = () => {
+      if (container.clientWidth === 0 || container.clientHeight === 0) return;
+      try {
+        fit.fit();
+      } catch {
+        /* container not measured yet */
+      }
+    };
+
+    // Fit BEFORE replaying: cursor-positioning sequences in the buffer only
+    // land correctly once xterm has its real dimensions.
+    fitIfMeasurable();
 
     termRef.current = term;
     fitRef.current = fit;
@@ -73,19 +108,8 @@ export default function LiveTerminal({
       term.write(buffered);
     }
 
-    const inputDisposable = term.onData((data) => onInput?.(data));
-    const resizeDisposable = term.onResize(({ cols, rows }) =>
-      onResize?.(cols, rows),
-    );
-
-    const ro = new ResizeObserver(() => {
-      try {
-        fit.fit();
-      } catch {
-        /* ignore */
-      }
-    });
-    ro.observe(containerRef.current);
+    const ro = new ResizeObserver(fitIfMeasurable);
+    ro.observe(container);
 
     return () => {
       registerSink(null);

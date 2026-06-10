@@ -29,6 +29,11 @@ export function useProcess(repoId: string | undefined): UseProcessResult {
   const [exitCode, setExitCode] = useState<number | null>(null);
   const sinkRef = useRef<((chunk: string) => void) | null>(null);
   const readyRef = useRef<Promise<void> | null>(null);
+  const statusRef = useRef<ProcessStatus>("idle");
+
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
 
   useEffect(() => {
     if (!repoId) {
@@ -150,7 +155,7 @@ export function useProcess(repoId: string | undefined): UseProcessResult {
 
   const resize = useCallback(
     async (cols: number, rows: number) => {
-      if (!repoId) return;
+      if (!repoId || statusRef.current !== "running") return;
       try {
         await processClient.resize(repoId, cols, rows);
       } catch {

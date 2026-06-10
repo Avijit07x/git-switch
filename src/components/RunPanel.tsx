@@ -92,7 +92,7 @@ export function RunPanel({ repository, onUpdate }: RunPanelProps) {
           <div className="relative min-h-0 flex-1">
             {targets.map((t) => (
               <div
-                key={t.id}
+                key={`${repository.id}:${t.id}`}
                 className={cn(
                   "absolute inset-0 flex overflow-hidden",
                   t.id === activeTab ? "" : "pointer-events-none invisible",
