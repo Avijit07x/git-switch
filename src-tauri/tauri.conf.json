@@ -48,7 +48,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE0MkI1NTUyQTVCOTk2OTAKUldTUWxybWxVbFVycEQ2cTF3cXNhSDBMSVpzUFU1Y3ZGNnRjRFZ3SFE5bng0cGxYcHlFcDhFRFAK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDkzMTE5NEFBOThEMEU1MjcKUldRbjVkQ1lxcFFSa3psYjhaY1Y1Nm5wSElSWGk1L3NjUm9teG5nUFpKUTRrMTJvRFhjd1JlQnIK",
       "endpoints": [
         "https://github.com/Avijit07x/git-switch/releases/latest/download/latest.json"
       ]
