@@ -8,6 +8,14 @@ export function openExternal(target: string): Promise<void> {
   return invoke<void>("open_external", { target });
 }
 
+/**
+ * Open the repository as a project in the user's code editor, focusing
+ * `file` inside it when provided.
+ */
+export function openInEditor(repoPath: string, file?: string): Promise<void> {
+  return invoke<void>("open_in_editor", { repoPath, file: file ?? null });
+}
+
 /** Returns the installed git version string, or null if git isn't on PATH. */
 export function checkGit(): Promise<string | null> {
   return invoke<string | null>("check_git");

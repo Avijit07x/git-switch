@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Columns2, FileCode, Rows3 } from "lucide-react";
+import {
+  Columns2,
+  Copy,
+  FileClock,
+  FileCode,
+  Rows3,
+  SquarePen,
+} from "lucide-react";
+import { toast } from "sonner";
 
 import {
   Dialog,
@@ -8,9 +16,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { IconHint } from "@/components/IconHint";
+import { copyText } from "@/lib/clipboard";
 import { gitClient } from "@/lib/git-client";
+import { openInEditor } from "@/lib/system";
 import { cn } from "@/lib/utils";
 import { useUiStore, type DiffView } from "@/stores/use-ui-store";
+
+// Where the "copy contents before change" action should read from: the repo
+// plus the revision that holds the pre-change version (HEAD for working-tree
+// diffs, `<hash>^` for a commit's patch).
+export interface DiffCopyContext {
+  repoPath: string;
+  beforeRevision: string;
+}
 
 interface DiffDialogProps {
   open: boolean;
@@ -18,6 +37,7 @@ interface DiffDialogProps {
   repositoryPath: string;
   file: string | null;
   staged: boolean;
+  untracked?: boolean;
 }
 
 // Single-responsibility: fetch the unified diff for one file and render it
@@ -31,6 +51,7 @@ export function DiffDialog({
   repositoryPath,
   file,
   staged,
+  untracked = false,
 }: DiffDialogProps) {
   const { data, isLoading, error } = useQuery({
     queryKey: ["diff", repositoryPath, file ?? "", staged],
@@ -50,12 +71,14 @@ export function DiffDialog({
             <span
               className={cn(
                 "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase",
-                staged
-                  ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                  : "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+                untracked
+                  ? "bg-sky-500/15 text-sky-700 dark:text-sky-300"
+                  : staged
+                    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                    : "bg-amber-500/15 text-amber-700 dark:text-amber-300",
               )}
             >
-              {staged ? "staged" : "unstaged"}
+              {untracked ? "new file" : staged ? "staged" : "unstaged"}
             </span>
             <DiffViewToggle className="ml-auto mr-6" />
           </DialogTitle>
@@ -71,7 +94,10 @@ export function DiffDialog({
               No changes for this file.
             </p>
           ) : (
-            <DiffBody diff={data} />
+            <DiffBody
+              diff={data}
+              copy={{ repoPath: repositoryPath, beforeRevision: "HEAD" }}
+            />
           )}
         </div>
       </DialogContent>
@@ -79,11 +105,19 @@ export function DiffDialog({
   );
 }
 
+// One run of characters within a line; `changed` runs get the stronger
+// word-level highlight on top of the line background.
+interface TextSegment {
+  text: string;
+  changed: boolean;
+}
+
 interface DiffLine {
   kind: "context" | "add" | "del" | "hunk" | "file";
   oldNo: number | null;
   newNo: number | null;
   text: string;
+  segments?: TextSegment[];
 }
 
 // Turn `diff --git a/old b/new` into a human path: the new path, or
@@ -95,6 +129,24 @@ function parseFileHeader(raw: string): string {
   return oldPath === newPath ? newPath : `${oldPath} → ${newPath}`;
 }
 
+// File-level metadata lines git emits between `diff --git` and the first
+// hunk (mode changes, renames, new/deleted file markers). Real content
+// lines always start with " ", "+", "-" or "\", so these prefixes can't
+// collide with file contents.
+const FILE_META_PREFIXES = [
+  "index ",
+  "new file mode",
+  "deleted file mode",
+  "old mode",
+  "new mode",
+  "similarity index",
+  "dissimilarity index",
+  "rename from",
+  "rename to",
+  "copy from",
+  "copy to",
+];
+
 // Single-responsibility: parse a unified diff into typed lines. Supports
 // multiple hunks, multiple file headers (we render the first file's hunks
 // since DiffDialog is one-file-at-a-time).
@@ -103,16 +155,21 @@ function parseUnifiedDiff(diff: string): DiffLine[] {
   let oldNo = 0;
   let newNo = 0;
   for (const raw of diff.split("\n")) {
-    if (raw.startsWith("diff --git") || raw.startsWith("index ")) {
+    if (raw.startsWith("diff --git")) {
       // File-level metadata — show only the file path as a separator.
-      if (raw.startsWith("diff --git")) {
-        out.push({
-          kind: "file",
-          oldNo: null,
-          newNo: null,
-          text: parseFileHeader(raw),
-        });
-      }
+      out.push({
+        kind: "file",
+        oldNo: null,
+        newNo: null,
+        text: parseFileHeader(raw),
+      });
+      continue;
+    }
+    if (FILE_META_PREFIXES.some((prefix) => raw.startsWith(prefix))) {
+      continue;
+    }
+    if (raw.startsWith("Binary files ")) {
+      out.push({ kind: "hunk", oldNo: null, newNo: null, text: raw });
       continue;
     }
     if (raw.startsWith("---") || raw.startsWith("+++")) {
@@ -159,6 +216,191 @@ function parseUnifiedDiff(diff: string): DiffLine[] {
     }
   }
   return out;
+}
+
+// Beyond this many token-pair comparisons the O(n·m) LCS isn't worth it
+// (think minified bundles); we fall back to highlighting the whole changed
+// middle between the common prefix and suffix.
+const WORD_DIFF_TOKEN_CAP = 250_000;
+
+// Word-ish tokens: identifier runs, whitespace runs, single punctuation.
+// Every character matches exactly one class, so joining tokens reproduces
+// the original line.
+function tokenize(text: string): string[] {
+  return text.match(/[A-Za-z0-9_]+|\s+|[^A-Za-z0-9_\s]/g) ?? [];
+}
+
+function mergeSegments(segments: TextSegment[]): TextSegment[] {
+  const out: TextSegment[] = [];
+  for (const seg of segments) {
+    if (!seg.text) continue;
+    const last = out[out.length - 1];
+    if (last && last.changed === seg.changed) last.text += seg.text;
+    else out.push({ ...seg });
+  }
+  return out;
+}
+
+// Token-level LCS (dynamic programming over suffixes), then a backtrack
+// that marks non-common tokens as changed on their own side.
+function lcsSegments(
+  a: string[],
+  b: string[],
+): [TextSegment[], TextSegment[]] {
+  const m = a.length;
+  const n = b.length;
+  const width = n + 1;
+  const dp = new Uint32Array((m + 1) * width);
+  for (let i = m - 1; i >= 0; i -= 1) {
+    for (let j = n - 1; j >= 0; j -= 1) {
+      dp[i * width + j] =
+        a[i] === b[j]
+          ? dp[(i + 1) * width + j + 1] + 1
+          : Math.max(dp[(i + 1) * width + j], dp[i * width + j + 1]);
+    }
+  }
+  const oldSeg: TextSegment[] = [];
+  const newSeg: TextSegment[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < m && j < n) {
+    if (a[i] === b[j]) {
+      oldSeg.push({ text: a[i], changed: false });
+      newSeg.push({ text: b[j], changed: false });
+      i += 1;
+      j += 1;
+    } else if (dp[(i + 1) * width + j] >= dp[i * width + j + 1]) {
+      oldSeg.push({ text: a[i], changed: true });
+      i += 1;
+    } else {
+      newSeg.push({ text: b[j], changed: true });
+      j += 1;
+    }
+  }
+  while (i < m) {
+    oldSeg.push({ text: a[i], changed: true });
+    i += 1;
+  }
+  while (j < n) {
+    newSeg.push({ text: b[j], changed: true });
+    j += 1;
+  }
+  return [oldSeg, newSeg];
+}
+
+// GitHub-style intra-line diff for one old/new line pair. Returns null when
+// the lines share too little (< 25% of the longer line) — highlighting
+// nearly everything is worse than the plain line-level coloring.
+function diffWords(
+  oldText: string,
+  newText: string,
+): { old: TextSegment[]; new: TextSegment[] } | null {
+  const a = tokenize(oldText);
+  const b = tokenize(newText);
+
+  let start = 0;
+  while (start < a.length && start < b.length && a[start] === b[start]) {
+    start += 1;
+  }
+  let endA = a.length;
+  let endB = b.length;
+  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
+    endA -= 1;
+    endB -= 1;
+  }
+
+  const midA = a.slice(start, endA);
+  const midB = b.slice(start, endB);
+
+  let oldMid: TextSegment[];
+  let newMid: TextSegment[];
+  if (midA.length * midB.length > WORD_DIFF_TOKEN_CAP) {
+    oldMid = [{ text: midA.join(""), changed: true }];
+    newMid = [{ text: midB.join(""), changed: true }];
+  } else {
+    [oldMid, newMid] = lcsSegments(midA, midB);
+  }
+
+  const prefix = a.slice(0, start).join("");
+  const oldSeg = mergeSegments([
+    { text: prefix, changed: false },
+    ...oldMid,
+    { text: a.slice(endA).join(""), changed: false },
+  ]);
+  const newSeg = mergeSegments([
+    { text: prefix, changed: false },
+    ...newMid,
+    { text: b.slice(endB).join(""), changed: false },
+  ]);
+
+  const common = oldSeg.reduce(
+    (sum, seg) => (seg.changed ? sum : sum + seg.text.length),
+    0,
+  );
+  if (common < Math.max(oldText.length, newText.length) * 0.25) return null;
+
+  return { old: oldSeg, new: newSeg };
+}
+
+// Pair each run of deletions with the run of additions that follows it
+// (index-wise — the same pairing the split view uses) and attach word-level
+// segments to both sides of every pair.
+function annotateIntraLine(lines: DiffLine[]): DiffLine[] {
+  const out = lines.slice();
+  let i = 0;
+  while (i < out.length) {
+    if (out[i].kind !== "del") {
+      i += 1;
+      continue;
+    }
+    const delStart = i;
+    while (i < out.length && out[i].kind === "del") i += 1;
+    const addStart = i;
+    while (i < out.length && out[i].kind === "add") i += 1;
+    const pairs = Math.min(addStart - delStart, i - addStart);
+    for (let j = 0; j < pairs; j += 1) {
+      const del = out[delStart + j];
+      const add = out[addStart + j];
+      if (del.text === add.text) continue;
+      const seg = diffWords(del.text, add.text);
+      if (!seg) continue;
+      out[delStart + j] = { ...del, segments: seg.old };
+      out[addStart + j] = { ...add, segments: seg.new };
+    }
+  }
+  return out;
+}
+
+// Renders a diff line's text, wrapping changed runs in the stronger
+// word-level highlight. `box-decoration-clone` keeps the rounded highlight
+// intact when a segment wraps in the split view.
+function LineText({
+  text,
+  segments,
+  kind,
+}: {
+  text: string;
+  segments?: TextSegment[];
+  kind: "context" | "add" | "del";
+}) {
+  if (!segments || kind === "context") return <>{text || " "}</>;
+  const mark =
+    kind === "add"
+      ? "rounded-[2px] bg-emerald-500/30 box-decoration-clone"
+      : "rounded-[2px] bg-rose-500/30 box-decoration-clone";
+  return (
+    <>
+      {segments.map((seg, idx) =>
+        seg.changed ? (
+          <span key={idx} className={mark}>
+            {seg.text}
+          </span>
+        ) : (
+          <span key={idx}>{seg.text}</span>
+        ),
+      )}
+    </>
+  );
 }
 
 // Segmented Unified/Split control. Reads/writes the persisted UI store so
@@ -228,7 +470,54 @@ function groupFileSections(lines: DiffLine[]): FileSection[] {
 // on the horizontal axis too, so the path stays readable while the unified
 // view scrolls sideways. The background is solid (content scrolls beneath)
 // and mixes in a touch of the accent so the bar reads as a highlight.
-function FileHeader({ text }: { text: string }) {
+function FileHeader({
+  text,
+  copy,
+}: {
+  text: string;
+  copy?: DiffCopyContext;
+}) {
+  // Rename headers render as "old → new": the new path is what you'd copy,
+  // the old path is where the pre-change contents live.
+  const [oldPath, newPath = oldPath] = text.split(" → ");
+
+  const handleCopyPath = async () => {
+    try {
+      await copyText(newPath);
+      toast.success("Path copied", { description: newPath });
+    } catch {
+      toast.error("Couldn't copy to clipboard");
+    }
+  };
+
+  const handleCopyBefore = async () => {
+    if (!copy) return;
+    try {
+      const contents = await gitClient.getFileAtRevision(
+        copy.repoPath,
+        oldPath,
+        copy.beforeRevision,
+      );
+      await copyText(contents);
+      toast.success("Pre-change contents copied", { description: oldPath });
+    } catch (err) {
+      toast.error("Couldn't copy original contents", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
+  const handleOpenInEditor = async () => {
+    if (!copy) return;
+    try {
+      await openInEditor(copy.repoPath, newPath);
+    } catch (err) {
+      toast.error("Couldn't open file", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
   return (
     <div className="sticky top-0 z-20 border-y border-border/70 bg-[color-mix(in_oklch,var(--primary)_12%,var(--muted))] py-1.5 shadow-xs">
       <span
@@ -237,6 +526,40 @@ function FileHeader({ text }: { text: string }) {
       >
         <FileCode className="size-3.5 shrink-0 text-muted-foreground" />
         {text}
+        <IconHint label="Copy relative path" side="bottom">
+          <button
+            type="button"
+            className="ml-1 inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+            onClick={() => void handleCopyPath()}
+            aria-label={`Copy path of ${newPath}`}
+          >
+            <Copy className="size-3" />
+          </button>
+        </IconHint>
+        {copy ? (
+          <IconHint label="Copy contents before change" side="bottom">
+            <button
+              type="button"
+              className="inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+              onClick={() => void handleCopyBefore()}
+              aria-label={`Copy pre-change contents of ${oldPath}`}
+            >
+              <FileClock className="size-3" />
+            </button>
+          </IconHint>
+        ) : null}
+        {copy ? (
+          <IconHint label="Open in editor" side="bottom">
+            <button
+              type="button"
+              className="inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+              onClick={() => void handleOpenInEditor()}
+              aria-label={`Open ${newPath} in editor`}
+            >
+              <SquarePen className="size-3" />
+            </button>
+          </IconHint>
+        ) : null}
       </span>
     </div>
   );
@@ -246,12 +569,18 @@ function FileHeader({ text }: { text: string }) {
 // the same parser/row styling — it supports multi-file patches via the
 // `diff --git` separator rows. Renders unified or side-by-side depending on
 // the persisted preference (see DiffViewToggle).
-export function DiffBody({ diff }: { diff: string }) {
-  const lines = useMemo(() => parseUnifiedDiff(diff), [diff]);
+export function DiffBody({
+  diff,
+  copy,
+}: {
+  diff: string;
+  copy?: DiffCopyContext;
+}) {
+  const lines = useMemo(() => annotateIntraLine(parseUnifiedDiff(diff)), [diff]);
   const sections = useMemo(() => groupFileSections(lines), [lines]);
   const view = useUiStore((s) => s.diffView);
 
-  if (view === "split") return <SplitBody sections={sections} />;
+  if (view === "split") return <SplitBody sections={sections} copy={copy} />;
 
   // Native overflow container — both axes scroll independently. Replaces a
   // Radix ScrollArea whose viewport grew to the diff's natural width and
@@ -260,7 +589,9 @@ export function DiffBody({ diff }: { diff: string }) {
     <div className="h-full max-h-[70vh] overflow-auto bg-muted/20">
       {sections.map((section, i) => (
         <section key={i}>
-          {section.header ? <FileHeader text={section.header} /> : null}
+          {section.header ? (
+            <FileHeader text={section.header} copy={copy} />
+          ) : null}
           <table className="w-max min-w-full border-separate border-spacing-0 font-mono text-[12px] leading-[1.55]">
             <tbody>
               {section.lines.map((line, j) => (
@@ -278,6 +609,7 @@ interface SplitCell {
   no: number | null;
   text: string;
   kind: "context" | "add" | "del";
+  segments?: TextSegment[];
 }
 
 type SplitRowData =
@@ -322,10 +654,20 @@ function buildSplitRows(lines: DiffLine[]): SplitRowData[] {
       rows.push({
         kind: "pair",
         left: dels[j]
-          ? { no: dels[j].oldNo, text: dels[j].text, kind: "del" }
+          ? {
+              no: dels[j].oldNo,
+              text: dels[j].text,
+              kind: "del",
+              segments: dels[j].segments,
+            }
           : null,
         right: adds[j]
-          ? { no: adds[j].newNo, text: adds[j].text, kind: "add" }
+          ? {
+              no: adds[j].newNo,
+              text: adds[j].text,
+              kind: "add",
+              segments: adds[j].segments,
+            }
           : null,
       });
     }
@@ -348,7 +690,13 @@ function splitCellBg(cell: SplitCell | null): string {
 // Side-by-side body. Long lines wrap (like GitHub's split view) instead of
 // scrolling horizontally — two independently-scrolling halves aren't worth
 // the complexity.
-function SplitBody({ sections }: { sections: FileSection[] }) {
+function SplitBody({
+  sections,
+  copy,
+}: {
+  sections: FileSection[];
+  copy?: DiffCopyContext;
+}) {
   const sectionRows = useMemo(
     () => sections.map((section) => buildSplitRows(section.lines)),
     [sections],
@@ -357,7 +705,9 @@ function SplitBody({ sections }: { sections: FileSection[] }) {
     <div className="h-full max-h-[70vh] overflow-auto bg-muted/20">
       {sections.map((section, i) => (
         <section key={i}>
-          {section.header ? <FileHeader text={section.header} /> : null}
+          {section.header ? (
+            <FileHeader text={section.header} copy={copy} />
+          ) : null}
           <table className="w-full table-fixed border-separate border-spacing-0 font-mono text-[12px] leading-[1.55]">
             <colgroup>
               <col className="w-12" />
@@ -392,13 +742,29 @@ function SplitBody({ sections }: { sections: FileSection[] }) {
                         splitCellBg(row.left),
                       )}
                     >
-                      {row.left ? row.left.text || " " : ""}
+                      {row.left ? (
+                        <LineText
+                          text={row.left.text}
+                          segments={row.left.segments}
+                          kind={row.left.kind}
+                        />
+                      ) : (
+                        ""
+                      )}
                     </td>
                     <td className={cn(SPLIT_NUM_CELL, splitCellBg(row.right))}>
                       {row.right?.no ?? ""}
                     </td>
                     <td className={cn(SPLIT_TEXT_CELL, splitCellBg(row.right))}>
-                      {row.right ? row.right.text || " " : ""}
+                      {row.right ? (
+                        <LineText
+                          text={row.right.text}
+                          segments={row.right.segments}
+                          kind={row.right.kind}
+                        />
+                      ) : (
+                        ""
+                      )}
                     </td>
                   </tr>
                 );
@@ -458,7 +824,7 @@ function DiffRow({ line }: { line: DiffLine }) {
       </td>
       <td className="whitespace-pre px-3 py-px">
         <span className={cn("mr-2 select-none", markerColor)}>{marker}</span>
-        {line.text}
+        <LineText text={line.text} segments={line.segments} kind={line.kind} />
       </td>
     </tr>
   );

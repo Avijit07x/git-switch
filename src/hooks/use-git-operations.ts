@@ -352,11 +352,13 @@ const HISTORY_LIMIT = 50;
 
 export function useCommitHistory(
   repository: Repository | null,
+  branch?: string,
 ): UseQueryResult<CommitInfo[], Error> {
   const ready = useIsAppReady();
   return useQuery({
-    queryKey: ["commitHistory", repository?.id],
-    queryFn: () => gitClient.getCommitHistory(repository!.path, HISTORY_LIMIT),
+    queryKey: ["commitHistory", repository?.id, branch ?? ""],
+    queryFn: () =>
+      gitClient.getCommitHistory(repository!.path, HISTORY_LIMIT, branch),
     enabled: ready && !!repository,
   });
 }

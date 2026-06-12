@@ -169,8 +169,17 @@ pub async fn get_last_commit(path: String) -> Result<LastCommit, String> {
 pub async fn get_commit_history(
     path: String,
     limit: u32,
+    branch: Option<String>,
 ) -> Result<Vec<CommitInfo>, String> {
-    blocking(move || service::get_commit_history(&path, limit)).await
+    blocking(move || service::get_commit_history(&path, limit, branch.as_deref())).await
+}
+
+#[tauri::command]
+pub async fn cherry_pick_commit(
+    path: String,
+    hash: String,
+) -> Result<GitCommandResult, String> {
+    blocking(move || service::cherry_pick_commit(&path, &hash)).await
 }
 
 #[tauri::command]
@@ -185,4 +194,13 @@ pub async fn get_file_diff(
 #[tauri::command]
 pub async fn get_commit_diff(path: String, hash: String) -> Result<String, String> {
     blocking(move || service::get_commit_diff(&path, &hash)).await
+}
+
+#[tauri::command]
+pub async fn get_file_at_revision(
+    path: String,
+    file: String,
+    revision: String,
+) -> Result<String, String> {
+    blocking(move || service::get_file_at_revision(&path, &file, &revision)).await
 }

@@ -1,27 +1,41 @@
 import { useMemo } from "react";
-import { Clock } from "lucide-react";
+import { Cherry, Clock, Copy } from "lucide-react";
+import { toast } from "sonner";
 
+import { Button } from "@/components/ui/button";
+import { IconHint } from "@/components/IconHint";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useCommitHistory } from "@/hooks/use-git-operations";
+import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 import type { CommitInfo, Repository } from "@/lib/types";
 
 interface CommitHistoryPanelProps {
   repository: Repository;
+  /** Branch to read history from. Defaults to the current branch. */
+  branch?: string;
   /** When provided, rows become clickable (used to open the commit's diff). */
   onSelectCommit?: (commit: CommitInfo) => void;
+  /**
+   * When provided, each row's menu offers "Cherry-pick onto <current>".
+   * Pass only while browsing a branch other than the checked-out one.
+   */
+  cherryPick?: {
+    targetBranch: string;
+    onPick: (commit: CommitInfo) => void;
+  };
 }
 
-// Single-responsibility: read-only `git log` viewer for the current branch.
-// Shows the last N commits with short hash, subject, author, and a relative
-// timestamp. No interaction yet — clicking a commit could open a diff
-// against HEAD later, but the read-only flow is the bigger UX win to ship
-// first.
+// Single-responsibility: read-only `git log` viewer for one branch (current
+// by default). Shows the last N commits with short hash, subject, author,
+// and a relative timestamp; row menu carries commit-level actions.
 export function CommitHistoryPanel({
   repository,
+  branch,
   onSelectCommit,
+  cherryPick,
 }: CommitHistoryPanelProps) {
-  const { data, isLoading, error } = useCommitHistory(repository);
+  const { data, isLoading, error } = useCommitHistory(repository, branch);
 
   return (
     <section className="flex h-full min-h-0 flex-col">
@@ -50,6 +64,7 @@ export function CommitHistoryPanel({
                 key={commit.hash}
                 commit={commit}
                 onSelect={onSelectCommit}
+                cherryPick={cherryPick}
               />
             ))}
           </ul>
@@ -64,12 +79,23 @@ export function CommitHistoryPanel({
 function CommitRow({
   commit,
   onSelect,
+  cherryPick,
 }: {
   commit: CommitInfo;
   onSelect?: (commit: CommitInfo) => void;
+  cherryPick?: CommitHistoryPanelProps["cherryPick"];
 }) {
   const initials = useMemo(() => deriveInitials(commit.author), [commit.author]);
   const when = useMemo(() => relativeTime(commit.timestamp), [commit.timestamp]);
+
+  const handleCopyHash = async () => {
+    try {
+      await copyText(commit.hash);
+      toast.success("Commit hash copied", { description: commit.short });
+    } catch {
+      toast.error("Couldn't copy to clipboard");
+    }
+  };
 
   return (
     <li
@@ -104,6 +130,39 @@ function CommitRow({
           {when}
         </p>
       </div>
+      {cherryPick ? (
+        <IconHint
+          label={`Cherry-pick onto ${cherryPick.targetBranch}`}
+          side="left"
+        >
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-6 shrink-0 text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+            onClick={(e) => {
+              e.stopPropagation();
+              cherryPick.onPick(commit);
+            }}
+            aria-label={`Cherry-pick ${commit.short} onto ${cherryPick.targetBranch}`}
+          >
+            <Cherry className="size-3.5" />
+          </Button>
+        </IconHint>
+      ) : null}
+      <IconHint label="Copy commit hash" side="left">
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-6 shrink-0 text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+          onClick={(e) => {
+            e.stopPropagation();
+            void handleCopyHash();
+          }}
+          aria-label={`Copy hash of ${commit.short}`}
+        >
+          <Copy className="size-3.5" />
+        </Button>
+      </IconHint>
     </li>
   );
 }

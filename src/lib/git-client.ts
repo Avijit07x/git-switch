@@ -121,8 +121,19 @@ export const gitClient = {
   getLastCommit: (path: string): Promise<LastCommit> =>
     invoke<LastCommit>("get_last_commit", { path }),
 
-  getCommitHistory: (path: string, limit: number): Promise<CommitInfo[]> =>
-    invoke<CommitInfo[]>("get_commit_history", { path, limit }),
+  getCommitHistory: (
+    path: string,
+    limit: number,
+    branch?: string,
+  ): Promise<CommitInfo[]> =>
+    invoke<CommitInfo[]>("get_commit_history", {
+      path,
+      limit,
+      branch: branch ?? null,
+    }),
+
+  cherryPickCommit: (path: string, hash: string): Promise<GitCommandResult> =>
+    invoke<GitCommandResult>("cherry_pick_commit", { path, hash }),
 
   getFileDiff: (
     path: string,
@@ -133,6 +144,13 @@ export const gitClient = {
 
   getCommitDiff: (path: string, hash: string): Promise<string> =>
     invoke<string>("get_commit_diff", { path, hash }),
+
+  getFileAtRevision: (
+    path: string,
+    file: string,
+    revision: string,
+  ): Promise<string> =>
+    invoke<string>("get_file_at_revision", { path, file, revision }),
 } as const;
 
 export type GitClient = typeof gitClient;

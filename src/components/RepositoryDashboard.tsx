@@ -220,6 +220,7 @@ function DashboardInner({
   const [diffTarget, setDiffTarget] = useState<{
     file: string;
     staged: boolean;
+    untracked: boolean;
   } | null>(null);
   const dirty = (statusQuery.data?.files ?? []).length > 0;
 
@@ -353,6 +354,7 @@ function DashboardInner({
           <Card className="flex min-h-0 min-w-0 flex-1 flex-col">
             <CardContent className="flex min-h-0 flex-1 flex-col gap-3 p-4">
               <ChangedFilesPanel
+                repositoryPath={repository.path}
                 status={statusQuery.data}
                 loading={statusQuery.isLoading}
                 busy={ops.isBusy}
@@ -362,7 +364,9 @@ function DashboardInner({
                 onUnstage={ops.unstageFiles}
                 onIgnore={ops.ignoreFile}
                 onRefresh={handleRefresh}
-                onViewDiff={(file, staged) => setDiffTarget({ file, staged })}
+                onViewDiff={(file, staged, untracked) =>
+                  setDiffTarget({ file, staged, untracked })
+                }
               />
               <CommitPanel
                 repositoryPath={repository.path}
@@ -532,6 +536,7 @@ function DashboardInner({
             repositoryPath={repository.path}
             file={diffTarget.file}
             staged={diffTarget.staged}
+            untracked={diffTarget.untracked}
           />
         </Suspense>
       ) : null}

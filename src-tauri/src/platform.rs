@@ -25,3 +25,20 @@ fn apply_no_window(cmd: &mut Command) {
 
 #[cfg(not(target_os = "windows"))]
 fn apply_no_window(_cmd: &mut Command) {}
+
+/// Open a URL or path with the OS default handler — `open` on macOS,
+/// `xdg-open` on Linux, `explorer` on Windows. Fire-and-forget.
+pub fn open_with_default<S: AsRef<std::ffi::OsStr>>(target: S) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let program = "open";
+    #[cfg(target_os = "linux")]
+    let program = "xdg-open";
+    #[cfg(target_os = "windows")]
+    let program = "explorer";
+
+    command(program)
+        .arg(target)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Failed to open: {e}"))
+}

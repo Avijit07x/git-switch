@@ -1,3 +1,4 @@
+mod editor;
 mod fs;
 mod git;
 mod platform;
@@ -44,19 +45,38 @@ fn open_external(target: String) -> Result<(), String> {
     if target.trim().is_empty() {
         return Err("Empty target".into());
     }
+    platform::open_with_default(&target)
+}
 
-    #[cfg(target_os = "macos")]
-    let program = "open";
-    #[cfg(target_os = "linux")]
-    let program = "xdg-open";
-    #[cfg(target_os = "windows")]
-    let program = "explorer";
+/// Open the whole repository as a project in the user's code editor,
+/// focusing `file` inside it when provided. A lone file in an editor has no
+/// project context, so the folder always comes along. The relative path is
+/// resolved against the repo root and must stay inside it, so a crafted
+/// status entry can never escape the repository.
+#[tauri::command]
+fn open_in_editor(repo_path: String, file: Option<String>) -> Result<(), String> {
+    let root = std::path::Path::new(&repo_path)
+        .canonicalize()
+        .map_err(|e| format!("Invalid repository path: {e}"))?;
 
-    std::process::Command::new(program)
-        .arg(&target)
-        .spawn()
-        .map_err(|e| format!("Failed to open: {e}"))?;
-    Ok(())
+    let file_abs = match file.as_deref().map(str::trim).filter(|f| !f.is_empty()) {
+        Some(rel) => {
+            let target = root
+                .join(rel)
+                .canonicalize()
+                .map_err(|_| format!("File not found on disk: {rel}"))?;
+            if !target.starts_with(&root) {
+                return Err("File is outside the repository".into());
+            }
+            if !target.is_file() {
+                return Err(format!("Not a file: {rel}"));
+            }
+            Some(target)
+        }
+        None => None,
+    };
+
+    editor::open_project(&root, file_abs.as_deref())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -103,6 +123,8 @@ pub fn run() {
             get_commit_history,
             get_file_diff,
             get_commit_diff,
+            get_file_at_revision,
+            cherry_pick_commit,
             start_process,
             stop_process,
             is_process_running,
@@ -111,6 +133,7 @@ pub fn run() {
             detect_port,
             check_port,
             open_external,
+            open_in_editor,
             check_git,
             watch_repository,
             unwatch_repository,

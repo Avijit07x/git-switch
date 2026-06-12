@@ -2,22 +2,37 @@ import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   Ban,
+  Copy,
   Eye,
+  FileClock,
   FileText,
   RefreshCcw,
+  SquarePen,
   Undo2,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { IconHint } from "@/components/IconHint";
+import { copyText } from "@/lib/clipboard";
 import { describeStatusCode, shortFilePath } from "@/lib/format";
+import { gitClient } from "@/lib/git-client";
+import { openInEditor } from "@/lib/system";
 import { cn } from "@/lib/utils";
 import type { GitOperation, GitStatus, GitStatusFile } from "@/lib/types";
 
 interface ChangedFilesPanelProps {
+  repositoryPath: string;
   status: GitStatus | undefined;
   loading: boolean;
   busy: boolean;
@@ -28,12 +43,13 @@ interface ChangedFilesPanelProps {
   onIgnore: (file: string) => void;
   onRefresh: () => void;
   /** Open the inline diff viewer for a specific file. */
-  onViewDiff?: (file: string, staged: boolean) => void;
+  onViewDiff?: (file: string, staged: boolean, untracked: boolean) => void;
 }
 
 // Single-responsibility: show changed files, manage selection (including
 // Shift+click range-select), and dispatch stage/unstage actions.
 export function ChangedFilesPanel({
+  repositoryPath,
   status,
   loading,
   busy,
@@ -112,6 +128,41 @@ export function ChangedFilesPanel({
     if (stagedSelected.length === 0) return;
     onUnstage(stagedSelected);
     setSelected(new Set());
+  };
+
+  const handleOpenInEditor = async (path: string) => {
+    try {
+      await openInEditor(repositoryPath, path);
+    } catch (err) {
+      toast.error("Couldn't open file", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
+  const handleCopyPath = async (path: string) => {
+    try {
+      await copyText(path);
+      toast.success("Path copied", { description: path });
+    } catch {
+      toast.error("Couldn't copy to clipboard");
+    }
+  };
+
+  const handleCopyOriginal = async (path: string) => {
+    try {
+      const contents = await gitClient.getFileAtRevision(
+        repositoryPath,
+        path,
+        "HEAD",
+      );
+      await copyText(contents);
+      toast.success("Pre-change contents copied", { description: path });
+    } catch (err) {
+      toast.error("Couldn't copy original contents", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
   };
 
   return (
@@ -195,103 +246,164 @@ export function ChangedFilesPanel({
             {files.map((file, index) => {
               const sensitive = isSensitiveFile(file.path);
               return (
-                <li
-                  key={file.path}
-                  className={cn(
-                    "group flex select-none items-center gap-3 px-3 py-1.5 transition-colors hover:bg-accent/40",
-                    sensitive && "bg-destructive/5 hover:bg-destructive/10",
-                  )}
-                  onClick={(e) => handleRowClick(e, index)}
-                >
-                  <Checkbox
-                    checked={selected.has(file.path)}
-                    onCheckedChange={() => toggleOne(file.path, index)}
-                    tabIndex={-1}
-                    aria-label={`Select ${file.path}`}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                  {sensitive ? (
-                    <IconHint
-                      label="Likely contains secrets — should not be committed"
-                      side="top"
+                <ContextMenu key={file.path}>
+                  <ContextMenuTrigger asChild>
+                    <li
+                      className={cn(
+                        "group flex select-none items-center gap-3 px-3 py-1.5 transition-colors hover:bg-accent/40",
+                        sensitive && "bg-destructive/5 hover:bg-destructive/10",
+                      )}
+                      onClick={(e) => handleRowClick(e, index)}
                     >
-                      <AlertTriangle className="size-3.5 shrink-0 text-destructive" />
-                    </IconHint>
-                  ) : (
-                    <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  )}
-                  <span
-                    className={cn(
-                      "flex-1 truncate text-xs font-mono",
-                      sensitive && "font-semibold text-destructive",
-                    )}
-                    title={file.path}
-                  >
-                    {shortFilePath(file.path)}
-                  </span>
-                  <Badge
-                    variant={
-                      sensitive
-                        ? "destructive"
-                        : file.staged
-                          ? "success"
-                          : file.untracked
-                            ? "warning"
-                            : "outline"
-                    }
-                  >
-                    {sensitive ? "sensitive" : describeStatusCode(file)}
-                  </Badge>
-                  {onViewDiff ? (
-                    <IconHint label="View diff" side="left">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="size-6 text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onViewDiff(file.path, file.staged);
-                        }}
-                        disabled={busy || file.untracked}
-                        aria-label={`View diff for ${file.path}`}
+                      <Checkbox
+                        checked={selected.has(file.path)}
+                        onCheckedChange={() => toggleOne(file.path, index)}
+                        tabIndex={-1}
+                        aria-label={`Select ${file.path}`}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      {sensitive ? (
+                        <IconHint
+                          label="Likely contains secrets — should not be committed"
+                          side="top"
+                        >
+                          <AlertTriangle className="size-3.5 shrink-0 text-destructive" />
+                        </IconHint>
+                      ) : (
+                        <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      )}
+                      <span className="flex min-w-0 flex-1">
+                        <button
+                          type="button"
+                          className={cn(
+                            "-my-1.5 flex min-w-0 max-w-full items-center py-1.5 text-left",
+                            onViewDiff && "cursor-pointer hover:underline",
+                          )}
+                          title={file.path}
+                          onClick={(e) => {
+                            // Shift+click keeps range-select; plain click on
+                            // the name jumps straight to the diff.
+                            if (e.shiftKey) return;
+                            if (!onViewDiff) return;
+                            e.stopPropagation();
+                            onViewDiff(file.path, file.staged, file.untracked);
+                          }}
+                          tabIndex={-1}
+                        >
+                          <span
+                            className={cn(
+                              "truncate font-mono text-xs",
+                              sensitive && "font-semibold text-destructive",
+                            )}
+                          >
+                            {shortFilePath(file.path)}
+                          </span>
+                        </button>
+                      </span>
+                      <Badge
+                        variant={
+                          sensitive
+                            ? "destructive"
+                            : file.staged
+                              ? "success"
+                              : file.untracked
+                                ? "warning"
+                                : "outline"
+                        }
                       >
-                        <Eye className="size-3.5" />
-                      </Button>
-                    </IconHint>
-                  ) : null}
-                  {file.staged ? (
-                    <IconHint label="Unstage this file" side="left">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="size-6 text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onUnstage([file.path]);
-                        }}
+                        {sensitive ? "sensitive" : describeStatusCode(file)}
+                      </Badge>
+                      {onViewDiff ? (
+                        <IconHint label="View diff" side="left">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="size-6 text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onViewDiff(
+                                file.path,
+                                file.staged,
+                                file.untracked,
+                              );
+                            }}
+                            disabled={busy}
+                            aria-label={`View diff for ${file.path}`}
+                          >
+                            <Eye className="size-3.5" />
+                          </Button>
+                        </IconHint>
+                      ) : null}
+                      <IconHint label="Open in editor" side="left">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="size-6 text-muted-foreground opacity-0 hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handleOpenInEditor(file.path);
+                          }}
+                          aria-label={`Open ${file.path} in editor`}
+                        >
+                          <SquarePen className="size-3.5" />
+                        </Button>
+                      </IconHint>
+                    </li>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent className="text-xs">
+                    {onViewDiff ? (
+                      <ContextMenuItem
                         disabled={busy}
-                        aria-label={`Unstage ${file.path}`}
+                        onSelect={() =>
+                          onViewDiff(file.path, file.staged, file.untracked)
+                        }
                       >
-                        <Undo2 className="size-3.5" />
-                      </Button>
-                    </IconHint>
-                  ) : null}
-                  <IconHint label="Add to .gitignore" side="left">
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="size-6 text-muted-foreground opacity-0 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onIgnore(file.path);
-                      }}
-                      disabled={busy}
-                      aria-label={`Ignore ${file.path}`}
+                        <Eye className="size-3.5" /> View diff
+                      </ContextMenuItem>
+                    ) : null}
+                    <ContextMenuItem
+                      onSelect={() => void handleOpenInEditor(file.path)}
                     >
-                      <Ban className="size-3.5" />
-                    </Button>
-                  </IconHint>
-                </li>
+                      <SquarePen className="size-3.5" /> Open in editor
+                    </ContextMenuItem>
+                    {file.staged ? (
+                      <ContextMenuItem
+                        disabled={busy}
+                        onSelect={() => onUnstage([file.path])}
+                      >
+                        <Undo2 className="size-3.5" /> Unstage
+                      </ContextMenuItem>
+                    ) : (
+                      <ContextMenuItem
+                        disabled={busy}
+                        onSelect={() => onStage([file.path])}
+                      >
+                        <Undo2 className="size-3.5 rotate-180" /> Stage
+                      </ContextMenuItem>
+                    )}
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      onSelect={() => void handleCopyPath(file.path)}
+                    >
+                      <Copy className="size-3.5" /> Copy relative path
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      disabled={file.untracked}
+                      onSelect={() => void handleCopyOriginal(file.path)}
+                    >
+                      <FileClock className="size-3.5" /> Copy contents before
+                      change
+                    </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      disabled={busy}
+                      className="text-destructive focus:text-destructive"
+                      onSelect={() => onIgnore(file.path)}
+                    >
+                      <Ban className="size-3.5" /> Add to .gitignore
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
               );
             })}
           </ul>

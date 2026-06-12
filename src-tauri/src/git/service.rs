@@ -707,17 +707,41 @@ pub fn get_last_commit(path: &str) -> GitResult<LastCommit> {
     })
 }
 
-/// Read the last `limit` commits on the current branch. Uses a custom
-/// `--pretty=format` with `\x1f` (unit separator) between fields and `\x1e`
-/// (record separator) between commits so subjects with tabs/spaces survive.
-pub fn get_commit_history(path: &str, limit: u32) -> GitResult<Vec<CommitInfo>> {
+/// Reject ref names that could be parsed as flags or rev-spec tricks. Subset
+/// of Git's own ref rules — covers everything a human (or this UI) passes.
+fn is_safe_ref(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with('-')
+        && !name.contains("..")
+        && !name
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control() || matches!(c, '~' | '^' | ':' | '?' | '*' | '[' | '\\'))
+}
+
+/// Read the last `limit` commits on `branch` (current branch when `None`).
+/// Uses a custom `--pretty=format` with `\x1f` (unit separator) between
+/// fields and `\x1e` (record separator) between commits so subjects with
+/// tabs/spaces survive.
+pub fn get_commit_history(
+    path: &str,
+    limit: u32,
+    branch: Option<&str>,
+) -> GitResult<Vec<CommitInfo>> {
     let root = resolve_repo_root(path)?;
     let limit = limit.clamp(1, 500);
     let limit_str = limit.to_string();
     // %H = full hash, %h = short, %an = author name, %ae = email,
     // %at = author timestamp (epoch), %s = subject.
     let format = "--pretty=format:%H%x1f%h%x1f%an%x1f%ae%x1f%at%x1f%s%x1e";
-    let res = run_git(&root, &["log", format, "-n", &limit_str])?;
+    let mut args = vec!["log", format, "-n", &limit_str];
+    let branch = branch.map(str::trim).filter(|b| !b.is_empty());
+    if let Some(name) = branch {
+        if !is_safe_ref(name) {
+            return Err(GitError::InvalidInput(format!("Invalid branch: {name}")));
+        }
+        args.push(name);
+    }
+    let res = run_git(&root, &args)?;
     if !res.success {
         return Ok(Vec::new());
     }
@@ -773,14 +797,82 @@ pub fn get_file_diff(path: &str, file: &str, staged: bool) -> GitResult<String> 
     }
     // Empty diff usually means: untracked file. Fall back to comparing the
     // whole file content against /dev/null so the user still sees something.
+    // `--no-index` reads straight from disk with no repo confinement, so the
+    // path must canonicalize to a file inside the repository first.
     if !staged {
-        let untracked =
-            run_git(&root, &["diff", "--no-color", "--no-index", "--", "/dev/null", trimmed]);
-        if let Ok(r) = untracked {
-            if !r.stdout.is_empty() {
-                return Ok(r.stdout);
+        let confined = root
+            .join(trimmed)
+            .canonicalize()
+            .ok()
+            .zip(root.canonicalize().ok())
+            .map(|(target, canon_root)| {
+                target.is_file() && target.starts_with(&canon_root)
+            })
+            .unwrap_or(false);
+        if confined {
+            let untracked = run_git(
+                &root,
+                &["diff", "--no-color", "--no-index", "--", "/dev/null", trimmed],
+            );
+            if let Ok(r) = untracked {
+                if !r.stdout.is_empty() {
+                    return Ok(r.stdout);
+                }
             }
         }
+    }
+    Ok(res.stdout)
+}
+
+/// Apply one commit onto the current branch (`git cherry-pick <hash>`).
+/// On failure (usually a conflict) the cherry-pick is aborted immediately so
+/// the worktree is never left in a half-applied state — this app has no
+/// conflict resolver, so a clean abort + readable error beats a stuck repo.
+pub fn cherry_pick_commit(path: &str, hash: &str) -> GitResult<GitCommandResult> {
+    let trimmed = hash.trim();
+    let valid_hash = trimmed.len() >= 4
+        && trimmed.len() <= 64
+        && trimmed.chars().all(|c| c.is_ascii_hexdigit());
+    if !valid_hash {
+        return Err(GitError::InvalidInput("Invalid commit hash".into()));
+    }
+    let root = resolve_repo_root(path)?;
+    let res = run_git(&root, &["cherry-pick", trimmed])?;
+    if !res.success {
+        // Best-effort: errors before the pick started make this a no-op.
+        let _ = run_git(&root, &["cherry-pick", "--abort"]);
+    }
+    Ok(res)
+}
+
+/// Full contents of a file at a revision (`git show <rev>:<file>`). Used by
+/// the "copy contents before change" actions. The revision is restricted to
+/// `HEAD` or a hex hash, each with an optional trailing `^` (parent), so
+/// arbitrary flags or refs can never reach git. The file path lives after
+/// the colon inside a single argument, so it cannot be parsed as a flag.
+pub fn get_file_at_revision(path: &str, file: &str, revision: &str) -> GitResult<String> {
+    let file = file.trim();
+    if file.is_empty() {
+        return Err(GitError::InvalidInput("File path is required".into()));
+    }
+    let rev = revision.trim();
+    let base = rev.strip_suffix('^').unwrap_or(rev);
+    let valid_rev = base == "HEAD"
+        || (base.len() >= 4
+            && base.len() <= 64
+            && base.chars().all(|c| c.is_ascii_hexdigit()));
+    if !valid_rev {
+        return Err(GitError::InvalidInput("Invalid revision".into()));
+    }
+    let root = resolve_repo_root(path)?;
+    let spec = format!("{rev}:{file}");
+    let res = run_git(&root, &["show", &spec])?;
+    if !res.success {
+        return Err(GitError::InvalidInput(if res.stderr.trim().is_empty() {
+            format!("No content for {file} at {rev}")
+        } else {
+            res.stderr.trim().to_string()
+        }));
     }
     Ok(res.stdout)
 }
